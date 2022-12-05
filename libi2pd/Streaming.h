@@ -59,6 +59,7 @@ namespace stream
 	const int INITIAL_RTT = 8000; // in milliseconds
 	const int INITIAL_RTO = 9000; // in milliseconds
 	const int MIN_SEND_ACK_TIMEOUT = 2; // in milliseconds
+	const int MAX_RFW = 16;
 	const int SYN_TIMEOUT = 200; // how long we wait for SYN after follow-on, in milliseconds
 	const size_t MAX_PENDING_INCOMING_BACKLOG = 128;
 	const int PENDING_INCOMING_TIMEOUT = 10; // in seconds
@@ -253,6 +254,7 @@ namespace stream
 			std::mutex m_SendBufferMutex;
 			SendBufferQueue m_SendBuffer;
 			int m_WindowSize, m_RTT, m_RTO, m_AckDelay;
+			int m_RFW; // RTT filter weight
 			uint64_t m_LastWindowSizeIncreaseTime;
 			int m_NumResendAttempts;
 			size_t m_MTU;
