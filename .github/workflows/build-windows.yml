@@ -63,7 +63,7 @@ jobs:
       run: |
         cd build
         cmake -DWITH_UPNP=ON -DWITH_STATIC=ON -DWITH_GIT_VERSION=ON -DCMAKE_BUILD_TYPE=Release .
-        make -j3
+        ninja -j3
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
