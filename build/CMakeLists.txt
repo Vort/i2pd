@@ -6,9 +6,9 @@ project("i2pd")
 #set(CMAKE_VERBOSE_MAKEFILE on)
 
 # Win32 build with cmake is not supported
-if(WIN32 OR MSVC OR MSYS OR MINGW)
-  message(SEND_ERROR "cmake build for windows is not supported. Please use MSYS2 with makefiles in project root.")
-endif()
+#if(WIN32 OR MSVC OR MSYS OR MINGW)
+#  message(SEND_ERROR "cmake build for windows is not supported. Please use MSYS2 with makefiles in project root.")
+#endif()
 
 # configurable options
 option(WITH_AESNI           "Use AES-NI instructions set"             ON)
@@ -41,11 +41,17 @@ set(LIBI2PD_SRC_DIR ../libi2pd)
 set(LIBI2PD_CLIENT_SRC_DIR ../libi2pd_client)
 set(LANG_SRC_DIR ../i18n)
 set(DAEMON_SRC_DIR ../daemon)
+if(WIN32)
+  set(WIN32_SRC_DIR ../Win32)
+endif()
 
 include_directories(${LIBI2PD_SRC_DIR})
 include_directories(${LIBI2PD_CLIENT_SRC_DIR})
 include_directories(${LANG_SRC_DIR})
 include_directories(${DAEMON_SRC_DIR})
+if(WIN32)
+  include_directories(${WIN32_SRC_DIR})
+endif()
 
 FILE(GLOB LIBI2PD_SRC ${LIBI2PD_SRC_DIR}/*.cpp)
 add_library(libi2pd ${LIBI2PD_SRC})
@@ -109,6 +115,11 @@ if(APPLE)
   add_definitions(-DMAC_OSX)
 endif()
 
+if(WIN32)
+  file(GLOB WIN32_RC ${WIN32_SRC_DIR}/*.rc)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWIN32_APP -DWIN32_LEAN_AND_MEAN")
+endif()
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Winvalid-pch -Wno-unused-parameter")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -pedantic")
 # TODO: The following is incompatible with static build and enabled hardening for OpenWRT.
@@ -153,6 +164,13 @@ if(UNIX)
     # "'sleep_for' is not a member of 'std::this_thread'" in gcc 4.7/4.8
     add_definitions("-D_GLIBCXX_USE_NANOSLEEP=1")
   endif()
+elseif(WIN32)
+  list(APPEND DAEMON_SRC
+    "${WIN32_SRC_DIR}/DaemonWin32.cpp"
+    "${WIN32_SRC_DIR}/Win32App.cpp"
+    "${WIN32_SRC_DIR}/Win32Service.cpp"
+    "${WIN32_SRC_DIR}/Win32NetState.cpp"
+  )
 endif()
 
 # Note: AES-NI and AVX is available on x86-based CPU's.
@@ -191,6 +209,7 @@ if(WITH_STATIC)
   set(Boost_USE_STATIC_LIBS ON)
   set(Boost_USE_STATIC_RUNTIME ON)
   set(OPENSSL_USE_STATIC_LIBS ON)
+  set(ZLIB_USE_STATIC_LIBS ON)
   set(BUILD_SHARED_LIBS OFF)
   if(${CMAKE_CXX_COMPILER} MATCHES ".*-openwrt-.*")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
@@ -258,8 +277,20 @@ message(STATUS "  ADDRSANITIZER    : ${WITH_ADDRSANITIZER}")
 message(STATUS "  THREADSANITIZER  : ${WITH_THREADSANITIZER}")
 message(STATUS "---------------------------------------")
 
+if(WIN32)
+  set(MINGW_EXTRA
+    "wsock32"
+    "ws2_32"
+    "iphlpapi"
+  )
+endif()
+
 if(WITH_BINARY)
-  add_executable("${PROJECT_NAME}" ${DAEMON_SRC})
+  if(WIN32)
+    add_executable("${PROJECT_NAME}" WIN32 ${DAEMON_SRC} ${WIN32_RC})
+  else()
+    add_executable("${PROJECT_NAME}" ${DAEMON_SRC})
+  endif()
 
   if(WITH_STATIC)
     set_target_properties("${PROJECT_NAME}" PROPERTIES LINK_FLAGS "-static")
@@ -279,7 +310,7 @@ if(WITH_BINARY)
     set(DL_LIB ${CMAKE_DL_LIBS})
   endif()
 
-  target_link_libraries("${PROJECT_NAME}" libi2pd libi2pdclient libi2pdlang ${Boost_LIBRARIES} OpenSSL::SSL OpenSSL::Crypto ${MINIUPNPC_LIBRARY} ZLIB::ZLIB Threads::Threads ${DL_LIB} ${CMAKE_REQUIRED_LIBRARIES})
+  target_link_libraries("${PROJECT_NAME}" libi2pd libi2pdclient libi2pdlang ${Boost_LIBRARIES} OpenSSL::SSL OpenSSL::Crypto ${MINIUPNPC_LIBRARY} ZLIB::ZLIB Threads::Threads ${DL_LIB} ${CMAKE_REQUIRED_LIBRARIES} ${MINGW_EXTRA})
 
   install(TARGETS "${PROJECT_NAME}" RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
   set(APPS "\${CMAKE_INSTALL_PREFIX}/bin/${PROJECT_NAME}${CMAKE_EXECUTABLE_SUFFIX}")
