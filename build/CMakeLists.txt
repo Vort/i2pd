@@ -108,7 +108,7 @@ endif()
 if(WITH_GIT_VERSION)
   include(GetGitRevisionDescription)
   git_describe(GIT_VERSION)
-  add_definitions(-DGITVER="${GIT_VERSION}")
+  add_definitions(-DGITVER=${GIT_VERSION})
 endif()
 
 if(APPLE)
