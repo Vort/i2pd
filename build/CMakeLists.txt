@@ -305,6 +305,10 @@ if(WITH_BINARY)
     add_executable("${PROJECT_NAME}" ${DAEMON_SRC})
   endif()
 
+  if(WIN32)
+    set_target_properties("${PROJECT_NAME}" PROPERTIES LINK_FLAGS_RELEASE "-s")
+  endif()
+
   if(WITH_STATIC)
     set_target_properties("${PROJECT_NAME}" PROPERTIES LINK_FLAGS "-static")
   endif()
