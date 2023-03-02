@@ -15,6 +15,7 @@ IUnknown *pUnknown = nullptr;
 INetworkListManager *pNetworkListManager = nullptr;
 IConnectionPointContainer *pCPContainer = nullptr;
 IConnectionPoint *pConnectPoint = nullptr;
+CNetworkListManagerEvent *pNetEvent = nullptr;
 DWORD Cookie = 0;
 
 void SubscribeToEvents()
@@ -45,8 +46,8 @@ void SubscribeToEvents()
 				Result = pCPContainer->FindConnectionPoint(IID_INetworkListManagerEvents, &pConnectPoint);
 				if(SUCCEEDED(Result))
 				{
-					CNetworkListManagerEvent *NetEvent = new CNetworkListManagerEvent;
-					Result = pConnectPoint->Advise((IUnknown *)NetEvent, &Cookie);
+					pNetEvent = new CNetworkListManagerEvent;
+					Result = pConnectPoint->Advise((IUnknown *)pNetEvent, &Cookie);
 					if (SUCCEEDED(Result))
 						LogPrint(eLogInfo, "NetState: Successfully subscribed to NetworkListManagerEvent messages");
 					else
@@ -69,6 +70,9 @@ void UnSubscribeFromEvents()
 			pConnectPoint->Unadvise(Cookie);
 			pConnectPoint->Release();
 		}
+
+		if (pNetEvent)
+			pNetEvent->Release();
 
 		if (pCPContainer)
 			pCPContainer->Release();
