@@ -84,11 +84,6 @@ namespace data
 	{
 		if (m_IsRunning)
 		{
-			if (m_PersistProfiles)
-				SaveProfiles ();
-			DeleteObsoleteProfiles ();
-			m_RouterInfos.clear ();
-			m_Floodfills.Clear ();
 			if (m_Thread)
 			{
 				m_IsRunning = false;
@@ -97,6 +92,11 @@ namespace data
 				delete m_Thread;
 				m_Thread = 0;
 			}
+			if (m_PersistProfiles)
+				SaveProfiles();
+			DeleteObsoleteProfiles();
+			m_RouterInfos.clear();
+			m_Floodfills.Clear();
 			m_LeaseSets.clear();
 			m_Requests.Stop ();
 		}
@@ -205,6 +205,7 @@ namespace data
 				LogPrint (eLogError, "NetDb: Runtime exception: ", ex.what ());
 			}
 		}
+		OPENSSL_thread_stop(); // prevents memory leak with statically linked OpenSSL
 	}
 
 	std::shared_ptr<const RouterInfo> NetDb::AddRouterInfo (const uint8_t * buf, int len)
@@ -446,7 +447,11 @@ namespace data
 					return;
 				}
 				m_FloodfillBootstrap = ri;
-				ReseedFromFloodfill(*ri);
+
+				// Following function is disabled because i2p::transport::transports
+				//   is not started at the moment of NetDb startup
+				// ReseedFromFloodfill(*ri);
+
 				// don't try reseed servers if trying to bootstrap from floodfill
 				return;
 			}

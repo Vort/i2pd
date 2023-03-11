@@ -1483,6 +1483,7 @@ namespace http {
 				LogPrint (eLogError, "HTTPServer: Runtime exception: ", ex.what ());
 			}
 		}
+		OPENSSL_thread_stop(); // prevents memory leak with statically linked OpenSSL
 	}
 
 	void HTTPServer::Accept ()

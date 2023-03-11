@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_set>
 #include <boost/asio.hpp>
+#include <openssl/crypto.h>
 
 #include "util.h"
 #include "Log.h"
@@ -158,6 +159,7 @@ namespace util
 				LogPrint (eLogError, m_Name, ": Runtime exception: ", ex.what ());
 			}
 		}
+		OPENSSL_thread_stop(); // prevents memory leak with statically linked OpenSSL
 	}
 
 	void SetThreadName (const char *name) {

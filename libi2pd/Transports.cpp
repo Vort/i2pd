@@ -82,6 +82,7 @@ namespace transport
 				m_Acquired.wait (l); // wait for element gets acquired
 			}
 		}
+		OPENSSL_thread_stop(); // prevents memory leak with statically linked OpenSSL
 	}
 
 	template<typename Keys>
@@ -150,14 +151,6 @@ namespace transport
 	Transports::~Transports ()
 	{
 		Stop ();
-		if (m_Service)
-		{
-			delete m_PeerCleanupTimer; m_PeerCleanupTimer = nullptr;
-			delete m_PeerTestTimer; m_PeerTestTimer = nullptr;
-			delete m_UpdateBandwidthTimer; m_UpdateBandwidthTimer = nullptr;
-			delete m_Work; m_Work = nullptr;
-			delete m_Service; m_Service = nullptr;
-		}
 	}
 
 	void Transports::Start (bool enableNTCP2, bool enableSSU2)
@@ -318,6 +311,15 @@ namespace transport
 
 	void Transports::Stop ()
 	{
+		m_IsRunning = false;
+		if (m_Service) m_Service->stop();
+		if (m_Thread)
+		{
+			m_Thread->join();
+			delete m_Thread;
+			m_Thread = nullptr;
+		}
+
 		if (m_PeerCleanupTimer) m_PeerCleanupTimer->cancel ();
 		if (m_PeerTestTimer) m_PeerTestTimer->cancel ();
 		m_Peers.clear ();
@@ -337,13 +339,17 @@ namespace transport
 		}
 
 		m_X25519KeysPairSupplier.Stop ();
-		m_IsRunning = false;
-		if (m_Service) m_Service->stop ();
-		if (m_Thread)
+	}
+
+	void Transports::Stop2 ()
+	{
+		if (m_Service)
 		{
-			m_Thread->join ();
-			delete m_Thread;
-			m_Thread = nullptr;
+			delete m_PeerCleanupTimer; m_PeerCleanupTimer = nullptr;
+			delete m_PeerTestTimer; m_PeerTestTimer = nullptr;
+			delete m_UpdateBandwidthTimer; m_UpdateBandwidthTimer = nullptr;
+			delete m_Work; m_Work = nullptr;
+			delete m_Service; m_Service = nullptr;
 		}
 	}
 
@@ -362,6 +368,7 @@ namespace transport
 				LogPrint (eLogError, "Transports: Runtime exception: ", ex.what ());
 			}
 		}
+		OPENSSL_thread_stop(); // prevents memory leak with statically linked OpenSSL
 	}
 
 	void Transports::HandleUpdateBandwidthTimer (const boost::system::error_code& ecode)

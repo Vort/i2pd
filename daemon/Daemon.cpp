@@ -389,6 +389,7 @@ namespace util
 		i2p::transport::transports.Stop();
 		LogPrint(eLogInfo, "Daemon: Stopping NetDB");
 		i2p::data::netdb.Stop();
+		i2p::transport::transports.Stop2();
 		if (d.httpServer) {
 			LogPrint(eLogInfo, "Daemon: Stopping HTTP Server");
 			d.httpServer->Stop();

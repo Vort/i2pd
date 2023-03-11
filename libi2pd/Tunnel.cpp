@@ -564,6 +564,7 @@ namespace tunnel
 				LogPrint (eLogError, "Tunnel: Runtime exception: ", ex.what ());
 			}
 		}
+		OPENSSL_thread_stop(); // prevents memory leak with statically linked OpenSSL
 	}
 
 	void Tunnels::HandleTunnelGatewayMsg (std::shared_ptr<TunnelBase> tunnel, std::shared_ptr<I2NPMessage> msg)

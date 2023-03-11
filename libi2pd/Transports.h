@@ -109,6 +109,7 @@ namespace transport
 
 			void Start (bool enableNTCP2=true, bool enableSSU2=true);
 			void Stop ();
+			void Stop2 ();
 
 			bool IsBoundSSU2() const { return m_SSU2Server != nullptr; }
 			bool IsBoundNTCP2() const { return m_NTCP2Server != nullptr; }
