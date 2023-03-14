@@ -161,7 +161,7 @@ namespace data
 			m_IsUnreachable = true;
 			return;
 		}
-		m_RouterIdentity = std::make_shared<IdentityEx>(m_Buffer->data (), m_BufferLen);
+		m_RouterIdentity = std::allocate_shared<IdentityEx>(PrivateHeapAlloc<int>(), m_Buffer->data (), m_BufferLen);
 		size_t identityLen = m_RouterIdentity->GetFullLen ();
 		if (identityLen >= m_BufferLen)
 		{

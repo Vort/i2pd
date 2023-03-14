@@ -9,6 +9,7 @@
 #ifndef IDENTITY_H__
 #define IDENTITY_H__
 
+#include <windows.h>
 #include <inttypes.h>
 #include <string.h>
 #include <string>
@@ -24,6 +25,28 @@ namespace i2p
 {
 namespace data
 {
+	extern HANDLE g_privateHeap;
+
+	template <class T>
+	struct PrivateHeapAlloc
+	{
+		typedef T value_type;
+		PrivateHeapAlloc() noexcept { }
+		template<class U> PrivateHeapAlloc(const PrivateHeapAlloc<U>& other) noexcept {}
+		template<class U> bool operator==(const PrivateHeapAlloc<U>&) const noexcept { return true; }
+		template<class U> bool operator!=(const PrivateHeapAlloc<U>&) const noexcept { return false; }
+
+		T* allocate(const size_t n) const
+		{
+			return static_cast<T*>(HeapAlloc(g_privateHeap, 0, sizeof(T)));
+		}
+
+		void deallocate(T* const p, size_t) const noexcept
+		{
+			HeapFree(g_privateHeap, 0, p);
+		}
+	};
+
 	typedef Tag<32> IdentHash;
 	inline std::string GetIdentHashAbbreviation (const IdentHash& ident)
 	{

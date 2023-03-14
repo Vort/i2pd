@@ -452,7 +452,7 @@ namespace data
 
 	PrivateKeys& PrivateKeys::operator=(const Keys& keys)
 	{
-		m_Public = std::make_shared<IdentityEx>(Identity (keys));
+		m_Public = std::allocate_shared<IdentityEx>(PrivateHeapAlloc<int>(), Identity (keys));
 		memcpy (m_PrivateKey, keys.privateKey, 256); // 256
 		memcpy (m_SigningPrivateKey, keys.signingPrivateKey, m_Public->GetSigningPrivateKeyLen ());
 		m_OfflineSignature.resize (0);
@@ -465,7 +465,7 @@ namespace data
 
 	PrivateKeys& PrivateKeys::operator=(const PrivateKeys& other)
 	{
-		m_Public = std::make_shared<IdentityEx>(*other.m_Public);
+		m_Public = std::allocate_shared<IdentityEx>(PrivateHeapAlloc<int>(), *other.m_Public);
 		memcpy (m_PrivateKey, other.m_PrivateKey, 256); // 256
 		m_OfflineSignature = other.m_OfflineSignature;
 		m_TransientSignatureLen = other.m_TransientSignatureLen;
@@ -486,7 +486,7 @@ namespace data
 
 	size_t PrivateKeys::FromBuffer (const uint8_t * buf, size_t len)
 	{
-		m_Public = std::make_shared<IdentityEx>();
+		m_Public = std::allocate_shared<IdentityEx>(PrivateHeapAlloc<int>());
 		size_t ret = m_Public->FromBuffer (buf, len);
 		auto cryptoKeyLen = GetPrivateKeyLen ();
 		if (!ret || ret + cryptoKeyLen > len) return 0; // overflow
@@ -720,7 +720,7 @@ namespace data
 			else
 				GenerateCryptoKeyPair (cryptoType, keys.m_PrivateKey, publicKey);
 			// identity
-			keys.m_Public = std::make_shared<IdentityEx> (isDestination ? nullptr : publicKey, signingPublicKey, type, cryptoType);
+			keys.m_Public = std::allocate_shared<IdentityEx> (PrivateHeapAlloc<int>(), isDestination ? nullptr : publicKey, signingPublicKey, type, cryptoType);
 
 			keys.CreateSigner ();
 			return keys;

@@ -33,6 +33,8 @@
 #include "Timestamp.h"
 #include "I18N.h"
 
+HANDLE i2p::data::g_privateHeap = nullptr;
+
 namespace i2p
 {
 namespace util
@@ -73,6 +75,8 @@ namespace util
 
 	bool Daemon_Singleton::init(int argc, char* argv[], std::shared_ptr<std::ostream> logstream)
 	{
+		i2p::data::g_privateHeap = HeapCreate(0, 0, 0);
+
 		i2p::config::Init();
 		i2p::config::ParseCmdline(argc, argv);
 

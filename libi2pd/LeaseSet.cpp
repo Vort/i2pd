@@ -50,7 +50,7 @@ namespace data
 	void LeaseSet::ReadFromBuffer (bool readIdentity, bool verifySignature)
 	{
 		if (readIdentity || !m_Identity)
-			m_Identity = std::make_shared<IdentityEx>(m_Buffer, m_BufferLen);
+			m_Identity = std::allocate_shared<IdentityEx>(PrivateHeapAlloc<int>(), m_Buffer, m_BufferLen);
 		size_t size = m_Identity->GetFullLen ();
 		if (size + 256 > m_BufferLen)
 		{
@@ -317,7 +317,7 @@ namespace data
 		std::shared_ptr<const IdentityEx> identity;
 		if (readIdentity || !GetIdentity ())
 		{
-			identity = std::make_shared<IdentityEx>(buf, len);
+			identity = std::allocate_shared<IdentityEx>(PrivateHeapAlloc<int>(), buf, len);
 			SetIdentity (identity);
 		}
 		else
