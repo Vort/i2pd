@@ -26,9 +26,35 @@ using namespace i2p::transport;
 
 namespace i2p
 {
+	volatile LONG g_virtualMemAllocCount = 0;
+
+	template <class T>
+	struct VirtualMemAlloc
+	{
+		typedef T value_type;
+		VirtualMemAlloc() noexcept { }
+		template<class U> VirtualMemAlloc(const VirtualMemAlloc<U>& other) noexcept {}
+		template<class U> bool operator==(const VirtualMemAlloc<U>&) const noexcept { return true; }
+		template<class U> bool operator!=(const VirtualMemAlloc<U>&) const noexcept { return false; }
+
+		T* allocate(const size_t n) const
+		{
+			InterlockedIncrement(&g_virtualMemAllocCount);
+			return static_cast<T*>(VirtualAlloc(0, sizeof(T), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+		}
+
+		void deallocate(T* const p, size_t) const noexcept
+		{
+			VirtualFree(p, 0, MEM_RELEASE);
+			InterlockedDecrement(&g_virtualMemAllocCount);
+		}
+	};
+
+	VirtualMemAlloc<double> g_virtualMemAlloc;
+
 	std::shared_ptr<I2NPMessage> NewI2NPMessage ()
 	{
-		return std::make_shared<I2NPMessageBuffer<I2NP_MAX_MESSAGE_SIZE> >();
+		return std::allocate_shared<I2NPMessageBuffer<I2NP_MAX_MESSAGE_SIZE> >(g_virtualMemAlloc);
 	}
 
 	std::shared_ptr<I2NPMessage> NewI2NPShortMessage ()
