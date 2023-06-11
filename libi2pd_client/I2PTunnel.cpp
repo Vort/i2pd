@@ -705,7 +705,7 @@ namespace client
 	}
 
 	I2PServerTunnel::I2PServerTunnel (const std::string& name, const std::string& address,
-		int port, std::shared_ptr<ClientDestination> localDestination, int inport, bool gzip):
+		int port, std::shared_ptr<ClientDestination> localDestination, int& inport, bool gzip):
 		I2PService (localDestination), m_IsUniqueLocal(true), m_Name (name), m_Address (address), m_Port (port), m_IsAccessList (false)
 	{
 		if (!inport) inport = port;	

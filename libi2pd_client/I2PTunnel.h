@@ -184,7 +184,7 @@ namespace client
 		public:
 
 			I2PServerTunnel (const std::string& name, const std::string& address, int port,
-				std::shared_ptr<ClientDestination> localDestination, int inport = 0, bool gzip = true);
+				std::shared_ptr<ClientDestination> localDestination, int& inport, bool gzip = true);
 
 			void Start ();
 			void Stop ();
