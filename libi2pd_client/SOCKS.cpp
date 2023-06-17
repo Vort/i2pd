@@ -595,7 +595,13 @@ namespace proxy
 					if (m_parseleft == 0) EnterState(GET5_PASSWD_SIZE);
 				break;
 				case GET5_PASSWD_SIZE:
-					EnterState(GET5_PASSWD, *sock_buff);
+					if (*sock_buff)
+						EnterState(GET5_PASSWD, *sock_buff);
+					else
+					{
+						Socks5UserPasswdResponse ();
+						EnterState(GET5_REQUESTV);
+					}
 				break;
 				case GET5_PASSWD:
 					// skip passwd for now
