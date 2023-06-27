@@ -39,6 +39,62 @@ int main( int argc, char* argv[] )
 
 #ifdef _WIN32
 #include <windows.h>
+#include <fstream>
+#include <thread>
+#include <ctime>
+#include <mutex>
+#include <vector>
+#include <iomanip>
+
+std::ofstream crstatfs;
+bool timeThreadExiting = false;
+time_t lastRequestTime = 0;
+const int dumpInterval = 30;
+std::shared_ptr<std::thread> timeThread;
+
+namespace i2p
+{
+	extern std::mutex g_CrResultsMutex;
+	extern std::vector<std::string> g_CrResults;
+}
+
+void DumpProfileData()
+{
+	std::unique_lock<std::mutex> l(i2p::g_CrResultsMutex);
+	for (int i = 0; i < i2p::g_CrResults.size(); i++)
+		crstatfs << i2p::g_CrResults[i] << std::endl;
+	i2p::g_CrResults.clear();
+}
+
+void StartProfiling()
+{
+	lastRequestTime = std::time(nullptr);
+	timeThread = std::make_shared<std::thread>([] {
+		for (;;)
+		{
+			time_t now = std::time(nullptr);
+			if (now / dumpInterval > lastRequestTime / dumpInterval)
+			{
+				lastRequestTime = now;
+				DumpProfileData();
+			}
+			Sleep(250);
+			if (timeThreadExiting)
+				return;
+		}
+	});
+
+	crstatfs.open("crstat.txt", std::ios::app);
+}
+
+void StopProfiling()
+{
+	crstatfs.close();
+
+	timeThreadExiting = true;
+	timeThread->join();
+	timeThread = nullptr;
+}
 
 int CALLBACK WinMain(
 	_In_ HINSTANCE hInstance,
@@ -47,6 +103,9 @@ int CALLBACK WinMain(
 	_In_ int       nCmdShow
 	)
 {
-	return main(__argc, __argv);
+	StartProfiling();
+	int r = main(__argc, __argv);
+	StopProfiling();
+	return r;
 }
 #endif
