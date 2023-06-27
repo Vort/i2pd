@@ -20,8 +20,14 @@
 #include "TunnelPool.h"
 #include "Destination.h"
 
+#include <mutex>
+#include <vector>
+
 namespace i2p
 {
+	std::mutex g_FailsMutex;
+	std::vector<std::string> g_Fails;
+
 namespace tunnel
 {
 	void Path::Add (std::shared_ptr<const i2p::data::RouterInfo> r)
@@ -317,6 +323,25 @@ namespace tunnel
 			m_LocalDestination->SetLeaseSetUpdated (); // update LeaseSet immediately
 	}
 
+	void LogFailedTunel(Tunnel& tunnel)
+	{
+		std::stringstream ss;
+		std::unique_lock<std::mutex> l(i2p::g_FailsMutex);
+
+		bool first = true;
+
+		tunnel.VisitTunnelHops(
+			[&](std::shared_ptr<const i2p::data::IdentityEx> hopIdent)
+			{
+				if (!first)
+					ss << "|";
+				ss << hopIdent->GetIdentHash().ToBase64();
+				first = false;
+			}
+		);
+		g_Fails.push_back(ss.str());
+	}
+
 	void TunnelPool::TestTunnels ()
 	{
 		decltype(m_Tests) tests;
@@ -334,6 +359,7 @@ namespace tunnel
 				if (it.second.first->GetState () == eTunnelStateTestFailed)
 				{
 					it.second.first->SetState (eTunnelStateFailed);
+					LogFailedTunel(*it.second.first);
 					std::unique_lock<std::mutex> l(m_OutboundTunnelsMutex);
 					m_OutboundTunnels.erase (it.second.first);
 				}
@@ -345,6 +371,7 @@ namespace tunnel
 				if (it.second.second->GetState () == eTunnelStateTestFailed)
 				{
 					it.second.second->SetState (eTunnelStateFailed);
+					LogFailedTunel(*it.second.second);
 					{
 						std::unique_lock<std::mutex> l(m_InboundTunnelsMutex);
 						m_InboundTunnels.erase (it.second.second);
