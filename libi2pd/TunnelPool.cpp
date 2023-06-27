@@ -20,6 +20,9 @@
 #include "TunnelPool.h"
 #include "Destination.h"
 
+#include <mutex>
+#include <vector>
+
 namespace i2p
 {
 namespace tunnel
