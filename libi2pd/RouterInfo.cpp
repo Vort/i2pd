@@ -939,6 +939,20 @@ namespace data
 		return nullptr;
 	}
 
+	bool RouterInfo::HaveAddressWithHost() const
+	{
+		// TODO: make it more generic using comparator
+#if (BOOST_VERSION >= 105300)
+		auto addresses = boost::atomic_load(&m_Addresses);
+#else
+		auto addresses = m_Addresses;
+#endif
+		for (const auto& address : *addresses)
+			if (address && !address->host.is_unspecified())
+				return true;
+		return false;
+	}
+
 	std::shared_ptr<const RouterInfo::Address> RouterInfo::GetNTCP2V4Address () const
 	{
 		return (*GetAddresses ())[eNTCP2V4Idx];

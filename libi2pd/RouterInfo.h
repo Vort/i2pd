@@ -233,6 +233,7 @@ namespace data
 			bool IsV6 () const { return m_SupportedTransports & (eNTCP2V6 | eSSU2V6); };
 			bool IsV4 () const { return m_SupportedTransports & (eNTCP2V4 | eSSU2V4); };
 			bool IsMesh () const { return m_SupportedTransports & eNTCP2V6Mesh; };
+			bool HaveAddressWithHost () const;
 			void EnableV6 ();
 			void DisableV6 ();
 			void EnableV4 ();
@@ -245,6 +246,7 @@ namespace data
 			CompatibleTransports GetCompatibleTransports (bool incoming) const { return incoming ? m_ReachableTransports : m_SupportedTransports; };
 			bool HasValidAddresses () const { return m_SupportedTransports; };
 			bool IsHidden () const { return m_Caps & eHidden; };
+			bool HaveReachableCap() const { return m_Caps & eReachable; };
 			bool IsHighBandwidth () const { return m_Caps & RouterInfo::eHighBandwidth; };
 			bool IsExtraBandwidth () const { return m_Caps & RouterInfo::eExtraBandwidth; };
 			bool IsEligibleFloodfill () const;
