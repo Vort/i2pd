@@ -85,13 +85,15 @@ int main( int argc, char* argv[] )
 {
 	if (Daemon.init(argc, argv))
 	{
-		StartProfiling();
 		if (Daemon.start())
+		{
+			StartProfiling();
 			Daemon.run ();
+			StopProfiling();
+		}
 		else
 			return EXIT_FAILURE;
 		Daemon.stop();
-		StopProfiling();
 	}
 	return EXIT_SUCCESS;
 }
