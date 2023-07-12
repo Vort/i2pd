@@ -55,7 +55,13 @@ void DumpProfileData()
 void StartProfiling()
 {
 	lastRequestTime = std::time(nullptr);
-	timeThread = std::make_shared<std::thread>([] {
+	timeThread = std::make_shared<std::thread>([] 
+	{
+#ifdef _WIN32
+		crstatfs.open("crstat.txt", std::ios::app);
+#else
+		crstatfs.open("/tmp/crstat.txt", std::ios::app);
+#endif
 		for (;;)
 		{
 			time_t now = std::time(nullptr);
@@ -69,21 +75,15 @@ void StartProfiling()
 				return;
 		}
 	});
-
-#ifdef _WIN32
-	crstatfs.open("crstat.txt", std::ios::app);
-#else
-	crstatfs.open("/tmp/crstat.txt", std::ios::app);
-#endif
 }
 
 void StopProfiling()
 {
-	crstatfs.close();
-
 	timeThreadExiting = true;
 	timeThread->join();
 	timeThread = nullptr;
+
+	crstatfs.close();
 }
 
 int main( int argc, char* argv[] )
