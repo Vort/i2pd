@@ -32,7 +32,6 @@ int main( int argc, char* argv[] )
 #include <vector>
 #include <iomanip>
 
-std::ofstream crstatfs;
 bool timeThreadExiting = false;
 time_t lastRequestTime = 0;
 const int dumpInterval = 30;
@@ -44,19 +43,12 @@ namespace i2p
 	extern std::vector<std::string> g_CrResults;
 }
 
-void DumpProfileData()
-{
-	std::unique_lock<std::mutex> l(i2p::g_CrResultsMutex);
-	for (int i = 0; i < i2p::g_CrResults.size(); i++)
-		crstatfs << i2p::g_CrResults[i] << std::endl;
-	i2p::g_CrResults.clear();
-}
-
 void StartProfiling()
 {
 	lastRequestTime = std::time(nullptr);
 	timeThread = std::make_shared<std::thread>([] 
 	{
+		std::ofstream crstatfs;
 #ifdef _WIN32
 		crstatfs.open("crstat.txt", std::ios::app);
 #else
@@ -68,12 +60,17 @@ void StartProfiling()
 			if (now / dumpInterval > lastRequestTime / dumpInterval)
 			{
 				lastRequestTime = now;
-				DumpProfileData();
+				std::unique_lock<std::mutex> l(i2p::g_CrResultsMutex);
+				for (int i = 0; i < i2p::g_CrResults.size(); i++)
+					crstatfs << i2p::g_CrResults[i] << std::endl;
+				i2p::g_CrResults.clear();
+				crstatfs << std::flush;
 			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			if (timeThreadExiting)
-				return;
+				break;
 		}
+		crstatfs.close();
 	});
 }
 
@@ -82,8 +79,6 @@ void StopProfiling()
 	timeThreadExiting = true;
 	timeThread->join();
 	timeThread = nullptr;
-
-	crstatfs.close();
 }
 
 int main( int argc, char* argv[] )
