@@ -61,7 +61,7 @@ void StartProfiling()
 			{
 				lastRequestTime = now;
 				std::unique_lock<std::mutex> l(i2p::g_CrResultsMutex);
-				for (int i = 0; i < i2p::g_CrResults.size(); i++)
+				for (size_t i = 0; i < i2p::g_CrResults.size(); i++)
 					crstatfs << i2p::g_CrResults[i] << std::endl;
 				i2p::g_CrResults.clear();
 				crstatfs << std::flush;
