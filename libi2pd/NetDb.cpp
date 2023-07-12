@@ -1209,7 +1209,8 @@ namespace data
 					(reverse ? compatibleWith->IsReachableFrom (*router) :
 						router->IsReachableFrom (*compatibleWith)) &&
 					router->IsECIES () && !router->IsHighCongestion (false) &&
-					(!endpoint || (router->IsV4 () && (!reverse || router->IsPublished (true)))); // endpoint must be ipv4 and published if inbound(reverse)
+					(!endpoint || (router->IsV4 () && (!reverse || router->IsPublished (true)))) &&  // endpoint must be ipv4 and published if inbound(reverse)
+					router->HaveAddressWithHost() && router->HaveReachableCap();
 			});
 	}
 
@@ -1245,8 +1246,8 @@ namespace data
 					(router->GetCaps () & RouterInfo::eHighBandwidth) &&
 					router->GetVersion () >= NETDB_MIN_HIGHBANDWIDTH_VERSION &&
 					router->IsECIES () && !router->IsHighCongestion (true) &&
-					(!endpoint || (router->IsV4 () && (!reverse || router->IsPublished (true)))); // endpoint must be ipv4 and published if inbound(reverse)
-
+					(!endpoint || (router->IsV4 () && (!reverse || router->IsPublished (true)))) && // endpoint must be ipv4 and published if inbound(reverse)
+					router->HaveAddressWithHost() && router->HaveReachableCap();
 			});
 	}
 

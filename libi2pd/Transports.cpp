@@ -947,7 +947,8 @@ namespace transport
 				return !peer.router && !peer.sessions.empty () && peer.isReachable &&
 					peer.sessions.front ()->GetSendQueueSize () <= PEER_ROUTER_INFO_OVERLOAD_QUEUE_SIZE &&
 					!peer.sessions.front ()->IsSlow () &&
-					(!isHighBandwidth || peer.isHighBandwidth);
+					(!isHighBandwidth || peer.isHighBandwidth) &&
+					peer.haveAddressWithHost;
 			});
 	}
 
