@@ -23,25 +23,11 @@ int main( int argc, char* argv[] )
 	return i2p::qt::RunQT (argc, argv);
 }
 #else
-int main( int argc, char* argv[] )
-{
-	if (Daemon.init(argc, argv))
-	{
-		if (Daemon.start())
-			Daemon.run ();
-		else
-			return EXIT_FAILURE;
-		Daemon.stop();
-	}
-	return EXIT_SUCCESS;
-}
-#endif
 
-#ifdef _WIN32
-#include <windows.h>
 #include <fstream>
 #include <thread>
 #include <ctime>
+#include <chrono>
 #include <mutex>
 #include <vector>
 #include <iomanip>
@@ -78,13 +64,17 @@ void StartProfiling()
 				lastRequestTime = now;
 				DumpProfileData();
 			}
-			Sleep(250);
+			std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			if (timeThreadExiting)
 				return;
 		}
 	});
 
+#ifdef _WIN32
 	crstatfs.open("crstat.txt", std::ios::app);
+#else
+	crstatfs.open("/tmp/crstat.txt", std::ios::app);
+#endif
 }
 
 void StopProfiling()
@@ -96,6 +86,25 @@ void StopProfiling()
 	timeThread = nullptr;
 }
 
+int main( int argc, char* argv[] )
+{
+	StartProfiling();
+	if (Daemon.init(argc, argv))
+	{
+		if (Daemon.start())
+			Daemon.run ();
+		else
+			return EXIT_FAILURE;
+		Daemon.stop();
+	}
+	StopProfiling();
+	return EXIT_SUCCESS;
+}
+#endif
+
+#ifdef _WIN32
+#include <windows.h>
+
 int CALLBACK WinMain(
 	_In_ HINSTANCE hInstance,
 	_In_ HINSTANCE hPrevInstance,
@@ -103,9 +112,7 @@ int CALLBACK WinMain(
 	_In_ int       nCmdShow
 	)
 {
-	StartProfiling();
 	int r = main(__argc, __argv);
-	StopProfiling();
 	return r;
 }
 #endif
