@@ -14,8 +14,14 @@
 #include "NetDb.hpp"
 #include "SSU2.h"
 
+#include <mutex>
+#include <vector>
+
 namespace i2p
 {
+	std::mutex g_TcResultsMutex;
+	std::vector<std::string> g_TcResults;
+
 namespace transport
 {
 	void SSU2IncompleteMessage::AttachNextFragment (const uint8_t * fragment, size_t fragmentSize)
@@ -110,6 +116,18 @@ namespace transport
 	{
 	}
 
+	void LogResult(std::shared_ptr<const i2p::data::IdentityEx> id, bool outgoing, const char* result)
+	{
+		std::stringstream ss;
+		time_t now = std::time(nullptr);
+		ss << "[" << std::put_time(std::gmtime(&now), "%Y.%m.%d %H:%M:%S") << "]: ";
+		ss << (outgoing ? 'O' : 'I') << ' ';
+		ss << result << ' ';
+		ss << id->GetIdentHash().ToBase64();
+		std::unique_lock<std::mutex> l(i2p::g_TcResultsMutex);
+		g_TcResults.push_back(ss.str());
+	}
+
 	void SSU2Session::Connect ()
 	{
 		if (m_State == eSSU2SessionStateUnknown || m_State == eSSU2SessionStateTokenReceived)
@@ -140,9 +158,15 @@ namespace transport
 		{
 			// timeout expired
 			if (m_State == eSSU2SessionStateIntroduced) // WaitForIntroducer
-				LogPrint (eLogWarning, "SSU2: Session was not introduced after ", SSU2_CONNECT_TIMEOUT, " seconds");
+			{
+				LogResult(GetRemoteIdentity(), IsOutgoing(), "TI");
+				LogPrint(eLogWarning, "SSU2: Session was not introduced after ", SSU2_CONNECT_TIMEOUT, " seconds");
+			}
 			else
-				LogPrint (eLogWarning, "SSU2: Session with ", m_RemoteEndpoint, " was not established after ", SSU2_CONNECT_TIMEOUT, " seconds");
+			{
+				LogResult(GetRemoteIdentity(), IsOutgoing(), "T");
+				LogPrint(eLogWarning, "SSU2: Session with ", m_RemoteEndpoint, " was not established after ", SSU2_CONNECT_TIMEOUT, " seconds");
+			}
 			Terminate ();
 		}
 	}
@@ -285,6 +309,7 @@ namespace transport
 
 	void SSU2Session::Established ()
 	{
+		LogResult(GetRemoteIdentity(), IsOutgoing(), "E");
 		m_State = eSSU2SessionStateEstablished;
 		m_EphemeralKeys = nullptr;
 		m_NoiseState.reset (nullptr);
