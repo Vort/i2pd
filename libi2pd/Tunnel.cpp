@@ -25,8 +25,14 @@
 #include "util.h"
 #include "ECIESX25519AEADRatchetSession.h"
 
+#include <mutex>
+#include <vector>
+
 namespace i2p
 {
+	std::mutex g_CrResultsMutex;
+	std::vector<std::string> g_CrResults;
+
 namespace tunnel
 {
 	Tunnel::Tunnel (std::shared_ptr<const TunnelConfig> config):
@@ -614,9 +620,68 @@ namespace tunnel
 		ManagePendingTunnels (m_PendingOutboundTunnels, ts);
 	}
 
+	void LogTunnelCreationResult(Tunnel& tunnel, bool inbound, int result)
+	{
+		std::stringstream ss;
+		time_t now = std::time(nullptr);
+		ss << "[" << std::put_time(std::gmtime(&now), "%Y.%m.%d %H:%M:%S") << "]: ";
+		if (inbound)
+			ss << "I";
+		else
+			ss << "O";
+		ss << " ";
+		if (result == 0)
+			ss << "T";
+		else if (result == 1)
+			ss << "F";
+		else if (result == 2)
+			ss << "S";
+		ss << " ";
+
+		bool first = true;
+
+		if (result == 2)
+		{
+			tunnel.VisitTunnelHops(
+				[&](std::shared_ptr<const i2p::data::IdentityEx> hopIdent)
+				{
+					if (!first)
+						ss << "|";
+					ss << hopIdent->GetIdentHash().ToBase64();
+					first = false;
+				}
+			);
+		}
+		else
+		{
+			auto config = tunnel.GetTunnelConfig();
+			if (config)
+			{
+				auto hop = config->GetFirstHop();
+				while (hop)
+				{
+					if (hop->ident)
+					{
+						if (!first)
+							ss << "|";
+						ss << hop->ident->GetIdentHash().ToBase64();
+						first = false;
+					}
+					hop = hop->next;
+				}
+			}
+		}
+
+		std::unique_lock<std::mutex> l(i2p::g_CrResultsMutex);
+		g_CrResults.push_back(ss.str());
+	}
+
 	template<class PendingTunnels>
 	void Tunnels::ManagePendingTunnels (PendingTunnels& pendingTunnels, uint64_t ts)
 	{
+		static const bool inbound = std::is_same<PendingTunnels,
+			std::map<uint32_t, std::shared_ptr<InboundTunnel> > >::value;
+
 		// check pending tunnel. delete failed or timeout
 		for (auto it = pendingTunnels.begin (); it != pendingTunnels.end ();)
 		{
@@ -627,6 +692,7 @@ namespace tunnel
 					if (ts > tunnel->GetCreationTime () + TUNNEL_CREATION_TIMEOUT ||
 					    ts + TUNNEL_CREATION_TIMEOUT < tunnel->GetCreationTime ())
 					{
+						LogTunnelCreationResult(*tunnel, inbound, 0);
 						LogPrint (eLogDebug, "Tunnel: Pending build request ", it->first, " timeout, deleted");
 						// update stats
 						auto config = tunnel->GetTunnelConfig ();
@@ -652,6 +718,7 @@ namespace tunnel
 						++it;
 				break;
 				case eTunnelStateBuildFailed:
+					LogTunnelCreationResult(*tunnel, inbound, 1);
 					LogPrint (eLogDebug, "Tunnel: Pending build request ", it->first, " failed, deleted");
 					it = pendingTunnels.erase (it);
 					FailedTunnelCreation();
@@ -662,6 +729,7 @@ namespace tunnel
 				break;
 				default:
 					// success
+					LogTunnelCreationResult(*tunnel, inbound, 2);
 					it = pendingTunnels.erase (it);
 					SuccesiveTunnelCreation();
 			}
