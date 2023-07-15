@@ -95,6 +95,7 @@ namespace transport
 		m_ConnectTimer (server.GetService ()), m_TerminationReason (eSSU2TerminationReasonNormalClose),
 		m_MaxPayloadSize (SSU2_MIN_PACKET_SIZE - IPV6_HEADER_SIZE - UDP_HEADER_SIZE - 32) // min size
 	{
+		m_Connecting = false;
 		m_NoiseState.reset (new i2p::crypto::NoiseSymmetricState);
 		if (in_RemoteRouter && m_Address)
 		{
@@ -116,22 +117,34 @@ namespace transport
 	{
 	}
 
-	void LogResult(std::shared_ptr<const i2p::data::IdentityEx> id, bool outgoing, SSU2SessionState state)
+	void LogResult(std::shared_ptr<const i2p::data::IdentityEx> id, bool outgoing, char result, int state)
 	{
 		std::stringstream ss;
 		time_t now = std::time(nullptr);
 		ss << "[" << std::put_time(std::gmtime(&now), "%Y.%m.%d %H:%M:%S") << "]: ";
 		ss << (outgoing ? 'O' : 'I') << ' ';
-		ss << state << ' ';
+		ss << result;
+		if (result != 'E')
+			ss << state;
+		ss << ' ';
 		ss << id->GetIdentHash().ToBase64();
 		std::unique_lock<std::mutex> l(i2p::g_TcResultsMutex);
 		g_TcResults.push_back(ss.str());
+	}
+
+	void SSU2Session::LogFailureReason(SSU2TerminationReason reason)
+	{
+		if (m_Connecting)
+		{
+			LogResult(GetRemoteIdentity(), IsOutgoing(), 'F', reason);
+		}
 	}
 
 	void SSU2Session::Connect ()
 	{
 		if (m_State == eSSU2SessionStateUnknown || m_State == eSSU2SessionStateTokenReceived)
 		{
+			m_Connecting = true;
 			ScheduleConnectTimer ();
 			auto token = m_Server.FindOutgoingToken (m_RemoteEndpoint);
 			if (token)
@@ -157,7 +170,8 @@ namespace transport
 		if (!ecode)
 		{
 			// timeout expired
-			LogResult(GetRemoteIdentity(), IsOutgoing(), m_State);
+			m_Connecting = false;
+			LogResult(GetRemoteIdentity(), IsOutgoing(), 'T', m_State);
 			if (m_State == eSSU2SessionStateIntroduced) // WaitForIntroducer
 				LogPrint (eLogWarning, "SSU2: Session was not introduced after ", SSU2_CONNECT_TIMEOUT, " seconds");
 			else
@@ -304,6 +318,7 @@ namespace transport
 
 	void SSU2Session::Established ()
 	{
+		m_Connecting = false;
 		m_State = eSSU2SessionStateEstablished;
 		m_EphemeralKeys = nullptr;
 		m_NoiseState.reset (nullptr);
@@ -312,7 +327,7 @@ namespace transport
 		m_ConnectTimer.cancel ();
 		SetTerminationTimeout (SSU2_TERMINATION_TIMEOUT);
 		transports.PeerConnected (shared_from_this ());
-		LogResult(GetRemoteIdentity(), IsOutgoing(), m_State);
+		LogResult(GetRemoteIdentity(), IsOutgoing(), 'E', 0);
 		if (m_OnEstablished)
 		{
 			m_OnEstablished ();
@@ -1552,7 +1567,7 @@ namespace transport
 				break;
 				case eSSU2BlkTermination:
 				{
-					uint8_t rsn = buf[11]; // reason
+					uint8_t rsn = buf[offset + size - 1]; // reason
 					LogPrint (eLogDebug, "SSU2: Termination reason=", (int)rsn);
 					if (IsEstablished () && rsn != eSSU2TerminationReasonTerminationReceived)
 						RequestTermination (eSSU2TerminationReasonTerminationReceived);
@@ -1560,6 +1575,7 @@ namespace transport
 					{
 						if (m_State == eSSU2SessionStateClosing && rsn == eSSU2TerminationReasonTerminationReceived)
 							m_State = eSSU2SessionStateClosingConfirmed;
+						LogFailureReason((SSU2TerminationReason)rsn);
 						Done ();
 					}
 					break;

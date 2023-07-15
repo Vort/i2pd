@@ -242,6 +242,7 @@ namespace transport
 			void SetOnEstablished (OnEstablished e) { m_OnEstablished = e; };
 			OnEstablished GetOnEstablished () const { return m_OnEstablished; };
 
+			void LogFailureReason (SSU2TerminationReason reason);
 			void Connect ();
 			bool Introduce (std::shared_ptr<SSU2Session> session, uint32_t relayTag);
 			void WaitForIntroduction ();
@@ -333,7 +334,7 @@ namespace transport
 			size_t CreateTerminationBlock (uint8_t * buf, size_t len);
 
 		private:
-
+			bool m_Connecting;
 			SSU2Server& m_Server;
 			std::shared_ptr<i2p::crypto::X25519Keys> m_EphemeralKeys;
 			std::unique_ptr<i2p::crypto::NoiseSymmetricState> m_NoiseState;
