@@ -116,13 +116,13 @@ namespace transport
 	{
 	}
 
-	void LogResult(std::shared_ptr<const i2p::data::IdentityEx> id, bool outgoing, const char* result)
+	void LogResult(std::shared_ptr<const i2p::data::IdentityEx> id, bool outgoing, SSU2SessionState state)
 	{
 		std::stringstream ss;
 		time_t now = std::time(nullptr);
 		ss << "[" << std::put_time(std::gmtime(&now), "%Y.%m.%d %H:%M:%S") << "]: ";
 		ss << (outgoing ? 'O' : 'I') << ' ';
-		ss << result << ' ';
+		ss << state << ' ';
 		ss << id->GetIdentHash().ToBase64();
 		std::unique_lock<std::mutex> l(i2p::g_TcResultsMutex);
 		g_TcResults.push_back(ss.str());
@@ -157,16 +157,11 @@ namespace transport
 		if (!ecode)
 		{
 			// timeout expired
+			LogResult(GetRemoteIdentity(), IsOutgoing(), m_State);
 			if (m_State == eSSU2SessionStateIntroduced) // WaitForIntroducer
-			{
-				LogResult(GetRemoteIdentity(), IsOutgoing(), "TI");
-				LogPrint(eLogWarning, "SSU2: Session was not introduced after ", SSU2_CONNECT_TIMEOUT, " seconds");
-			}
+				LogPrint (eLogWarning, "SSU2: Session was not introduced after ", SSU2_CONNECT_TIMEOUT, " seconds");
 			else
-			{
-				LogResult(GetRemoteIdentity(), IsOutgoing(), "T");
-				LogPrint(eLogWarning, "SSU2: Session with ", m_RemoteEndpoint, " was not established after ", SSU2_CONNECT_TIMEOUT, " seconds");
-			}
+				LogPrint (eLogWarning, "SSU2: Session with ", m_RemoteEndpoint, " was not established after ", SSU2_CONNECT_TIMEOUT, " seconds");
 			Terminate ();
 		}
 	}
@@ -309,7 +304,6 @@ namespace transport
 
 	void SSU2Session::Established ()
 	{
-		LogResult(GetRemoteIdentity(), IsOutgoing(), "E");
 		m_State = eSSU2SessionStateEstablished;
 		m_EphemeralKeys = nullptr;
 		m_NoiseState.reset (nullptr);
@@ -318,6 +312,7 @@ namespace transport
 		m_ConnectTimer.cancel ();
 		SetTerminationTimeout (SSU2_TERMINATION_TIMEOUT);
 		transports.PeerConnected (shared_from_this ());
+		LogResult(GetRemoteIdentity(), IsOutgoing(), m_State);
 		if (m_OnEstablished)
 		{
 			m_OnEstablished ();
