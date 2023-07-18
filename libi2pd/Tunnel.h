@@ -18,6 +18,7 @@
 #include <thread>
 #include <mutex>
 #include <memory>
+#include <chrono>
 #include "util.h"
 #include "Queue.h"
 #include "Crypto.h"
@@ -119,8 +120,10 @@ namespace tunnel
 			/** visit all hops we currently store */
 			void VisitTunnelHops(TunnelHopVisitor v);
 
-		private:
+		public:
+			std::chrono::high_resolution_clock::time_point m_CreationTimeHR;
 
+		private:
 			std::shared_ptr<const TunnelConfig> m_Config;
 			std::vector<TunnelHop> m_Hops;
 			bool m_IsShortBuildMessage;

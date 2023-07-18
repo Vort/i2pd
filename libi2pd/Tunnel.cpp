@@ -25,8 +25,14 @@
 #include "util.h"
 #include "ECIESX25519AEADRatchetSession.h"
 
+#include <mutex>
+#include <vector>
+
 namespace i2p
 {
+	std::mutex g_CrResultsMutex;
+	std::vector<std::string> g_CrResults;
+
 namespace tunnel
 {
 	Tunnel::Tunnel (std::shared_ptr<const TunnelConfig> config):
@@ -35,6 +41,7 @@ namespace tunnel
 		m_State (eTunnelStatePending), m_FarEndTransports (i2p::data::RouterInfo::eAllTransports),
 		m_IsRecreated (false), m_Latency (0)
 	{
+		m_CreationTimeHR = std::chrono::high_resolution_clock::now();
 	}
 
 	Tunnel::~Tunnel ()
@@ -122,6 +129,66 @@ namespace tunnel
 		}
 	}
 
+	void LogTunnelCreationResult(Tunnel& tunnel, int result)
+	{
+		std::stringstream ss;
+		time_t now = std::time(nullptr);
+		ss << "[" << std::put_time(std::gmtime(&now), "%Y.%m.%d %H:%M:%S") << "]: ";
+		if (tunnel.IsInbound())
+			ss << "I";
+		else
+			ss << "O";
+		ss << " ";
+		if (result == 0)
+			ss << "T";
+		else if (result == 1)
+			ss << "F";
+		else if (result == 2)
+			ss << "S";
+		ss << " ";
+
+		int durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::high_resolution_clock::now() - tunnel.m_CreationTimeHR).count();
+		ss << durationMs << " ";
+
+		bool first = true;
+
+		if (result == 2)
+		{
+			tunnel.VisitTunnelHops(
+				[&](std::shared_ptr<const i2p::data::IdentityEx> hopIdent)
+			{
+				if (!first)
+					ss << "|";
+				ss << hopIdent->GetIdentHash().ToBase64();
+				first = false;
+			}
+			);
+		}
+		else
+		{
+			auto config = tunnel.GetTunnelConfig();
+			if (config)
+			{
+				auto hop = config->GetFirstHop();
+				while (hop)
+				{
+					if (hop->ident)
+					{
+						if (!first)
+							ss << "|";
+						ss << hop->ident->GetIdentHash().ToBase64();
+						first = false;
+					}
+					hop = hop->next;
+				}
+			}
+		}
+
+		std::unique_lock<std::mutex> l(i2p::g_CrResultsMutex);
+		g_CrResults.push_back(ss.str());
+	}
+
 	bool Tunnel::HandleTunnelBuildResponse (uint8_t * msg, size_t len)
 	{
 		LogPrint (eLogDebug, "Tunnel: TunnelBuildResponse ", (int)msg[0], " records.");
@@ -188,7 +255,15 @@ namespace tunnel
 			m_FarEndTransports = m_Config->GetFarEndTransports ();
 			m_Config = nullptr;
 		}
-		if (established) m_State = eTunnelStateEstablished;
+		if (established)
+		{
+			m_State = eTunnelStateEstablished;
+			LogTunnelCreationResult(*this, 2);
+		}
+		else
+		{
+			LogTunnelCreationResult(*this, 1);
+		}
 		return established;
 	}
 
@@ -627,6 +702,7 @@ namespace tunnel
 					if (ts > tunnel->GetCreationTime () + TUNNEL_CREATION_TIMEOUT ||
 					    ts + TUNNEL_CREATION_TIMEOUT < tunnel->GetCreationTime ())
 					{
+						LogTunnelCreationResult(*tunnel, 0);
 						LogPrint (eLogDebug, "Tunnel: Pending build request ", it->first, " timeout, deleted");
 						// update stats
 						auto config = tunnel->GetTunnelConfig ();
