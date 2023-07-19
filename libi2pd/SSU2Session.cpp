@@ -14,8 +14,14 @@
 #include "NetDb.hpp"
 #include "SSU2.h"
 
+#include <mutex>
+#include <vector>
+
 namespace i2p
 {
+	std::mutex g_SSU2cResultsMutex;
+	std::vector<std::string> g_SSU2cResults;
+
 namespace transport
 {
 	void SSU2IncompleteMessage::AttachNextFragment (const uint8_t * fragment, size_t fragmentSize)
@@ -89,6 +95,8 @@ namespace transport
 		m_ConnectTimer (server.GetService ()), m_TerminationReason (eSSU2TerminationReasonNormalClose),
 		m_MaxPayloadSize (SSU2_MIN_PACKET_SIZE - IPV6_HEADER_SIZE - UDP_HEADER_SIZE - 32) // min size
 	{
+		m_Connecting = false;
+		m_CreationTimeHR = std::chrono::high_resolution_clock::now();
 		m_NoiseState.reset (new i2p::crypto::NoiseSymmetricState);
 		if (in_RemoteRouter && m_Address)
 		{
@@ -110,10 +118,29 @@ namespace transport
 	{
 	}
 
+	void SSU2Session::LogResult(char result, int state)
+	{
+		std::stringstream ss;
+		time_t now = std::time(nullptr);
+		ss << "[" << std::put_time(std::gmtime(&now), "%Y.%m.%d %H:%M:%S") << "]: ";
+		ss << (IsOutgoing() ? 'O' : 'I') << ' ';
+		ss << result;
+		if (result != 'E')
+			ss << state;
+		ss << ' ';
+		int durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::high_resolution_clock::now() - m_CreationTimeHR).count();
+		ss << durationMs << " ";
+		ss << GetRemoteIdentity()->GetIdentHash().ToBase64();
+		std::unique_lock<std::mutex> l(i2p::g_SSU2cResultsMutex);
+		g_SSU2cResults.push_back(ss.str());
+	}
+
 	void SSU2Session::Connect ()
 	{
 		if (m_State == eSSU2SessionStateUnknown || m_State == eSSU2SessionStateTokenReceived)
 		{
+			m_Connecting = true;
 			ScheduleConnectTimer ();
 			auto token = m_Server.FindOutgoingToken (m_RemoteEndpoint);
 			if (token)
@@ -139,6 +166,8 @@ namespace transport
 		if (!ecode)
 		{
 			// timeout expired
+			m_Connecting = false;
+			LogResult('T', m_State);
 			if (m_State == eSSU2SessionStateIntroduced) // WaitForIntroducer
 				LogPrint (eLogWarning, "SSU2: Session was not introduced after ", SSU2_CONNECT_TIMEOUT, " seconds");
 			else
@@ -285,6 +314,7 @@ namespace transport
 
 	void SSU2Session::Established ()
 	{
+		m_Connecting = false;
 		m_State = eSSU2SessionStateEstablished;
 		m_EphemeralKeys = nullptr;
 		m_NoiseState.reset (nullptr);
@@ -293,6 +323,7 @@ namespace transport
 		m_ConnectTimer.cancel ();
 		SetTerminationTimeout (SSU2_TERMINATION_TIMEOUT);
 		transports.PeerConnected (shared_from_this ());
+		LogResult('E', 0);
 		if (m_OnEstablished)
 		{
 			m_OnEstablished ();
@@ -1553,6 +1584,8 @@ namespace transport
 						{
 							if (m_State == eSSU2SessionStateClosing && rsn == eSSU2TerminationReasonTerminationReceived)
 								m_State = eSSU2SessionStateClosingConfirmed;
+							if (m_Connecting)
+								LogResult('F', rsn);
 							Done ();
 						}
 					}
@@ -2066,6 +2099,8 @@ namespace transport
 				else
 				{
 					LogPrint (eLogInfo, "SSU2: RelayResponse status code=", (int)buf[1]);
+					if (it->second.first->m_State == eSSU2SessionStateIntroduced)
+						it->second.first->LogResult('f', buf[1]);
 					it->second.first->Done ();
 				}
 			}
