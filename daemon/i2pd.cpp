@@ -29,6 +29,8 @@ int main( int argc, char* argv[] )
 #include <ctime>
 #include <chrono>
 #include <mutex>
+#include <set>
+#include <array>
 #include <vector>
 #include <iomanip>
 
@@ -39,8 +41,9 @@ std::shared_ptr<std::thread> timeThread;
 
 namespace i2p
 {
-	extern std::mutex g_SSU2cResultsMutex;
-	extern std::vector<std::string> g_SSU2cResults;
+	extern std::mutex g_StatMutex;
+	extern std::vector<uint8_t> g_StatQueue;
+	extern std::set<std::array<uint8_t, 16> > g_StoredRIHashes;
 }
 
 void StartProfiling()
@@ -50,9 +53,9 @@ void StartProfiling()
 	{
 		std::ofstream ssu2cstatfs;
 #ifdef _WIN32
-		ssu2cstatfs.open("ssu2cstat.txt", std::ios::app);
+		ssu2cstatfs.open("ssu2cstat.bin", std::ios::app | std::ios::binary);
 #else
-		ssu2cstatfs.open("/tmp/ssu2cstat.txt", std::ios::app);
+		ssu2cstatfs.open("/tmp/ssu2cstat.bin", std::ios::app | std::ios::binary);
 #endif
 		for (;;)
 		{
@@ -60,10 +63,9 @@ void StartProfiling()
 			if (now / dumpInterval > lastRequestTime / dumpInterval)
 			{
 				lastRequestTime = now;
-				std::unique_lock<std::mutex> l(i2p::g_SSU2cResultsMutex);
-				for (size_t i = 0; i < i2p::g_SSU2cResults.size(); i++)
-					ssu2cstatfs << i2p::g_SSU2cResults[i] << std::endl;
-				i2p::g_SSU2cResults.clear();
+				std::unique_lock<std::mutex> l(i2p::g_StatMutex);
+				ssu2cstatfs.write((const char*)i2p::g_StatQueue.data(), i2p::g_StatQueue.size());
+				i2p::g_StatQueue.clear();
 				ssu2cstatfs << std::flush;
 			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(250));

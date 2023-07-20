@@ -60,6 +60,7 @@ namespace data
 			m_Addresses = boost::make_shared<Addresses>(); // create empty list
 			m_Buffer = buf;
 			m_BufferLen = len;
+			m_BufferBackup.assign(m_Buffer->data(), m_Buffer->data() + m_BufferLen);
 			ReadFromBuffer (true);
 		}
 		else
@@ -137,6 +138,7 @@ namespace data
 			if (!m_Buffer)
 				m_Buffer = NewBuffer ();
 			s.read((char *)m_Buffer->data (), m_BufferLen);
+			m_BufferBackup.assign(m_Buffer->data(), m_Buffer->data() + m_BufferLen);
 		}
 		else
 		{
@@ -1092,6 +1094,7 @@ namespace data
 		if (len > m_Buffer->size ()) len = m_Buffer->size ();
 		memcpy (m_Buffer->data (), buf, len);
 		m_BufferLen = len;
+		m_BufferBackup.assign(buf, buf + len);
 	}
 
 	std::shared_ptr<RouterInfo::Buffer> RouterInfo::NewBuffer () const

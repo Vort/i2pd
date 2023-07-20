@@ -243,7 +243,7 @@ namespace transport
 			void SetOnEstablished (OnEstablished e) { m_OnEstablished = e; };
 			OnEstablished GetOnEstablished () const { return m_OnEstablished; };
 
-			void LogResult(char result, int state);
+			void LogResult(char result, uint8_t state);
 			void Connect ();
 			bool Introduce (std::shared_ptr<SSU2Session> session, uint32_t relayTag);
 			void WaitForIntroduction ();
@@ -334,11 +334,11 @@ namespace transport
 			size_t CreatePeerTestBlock (uint8_t * buf, size_t len, uint32_t nonce); // Alice
 			size_t CreateTerminationBlock (uint8_t * buf, size_t len);
 
-		public:
-			std::chrono::high_resolution_clock::time_point m_CreationTimeHR;
-
 		private:
 			bool m_Connecting;
+			std::chrono::high_resolution_clock::time_point m_CreationTimeHR;
+			std::vector<uint8_t> m_RIBuffer;
+
 			SSU2Server& m_Server;
 			std::shared_ptr<i2p::crypto::X25519Keys> m_EphemeralKeys;
 			std::unique_ptr<i2p::crypto::NoiseSymmetricState> m_NoiseState;

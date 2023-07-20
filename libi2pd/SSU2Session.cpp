@@ -8,6 +8,7 @@
 
 #include <string.h>
 #include <openssl/rand.h>
+#include <openssl/md5.h>
 #include "Log.h"
 #include "Transports.h"
 #include "Gzip.h"
@@ -16,11 +17,14 @@
 
 #include <mutex>
 #include <vector>
+#include <set>
+#include <array>
 
 namespace i2p
 {
-	std::mutex g_SSU2cResultsMutex;
-	std::vector<std::string> g_SSU2cResults;
+	std::mutex g_StatMutex;
+	std::vector<uint8_t> g_StatQueue;
+	std::set<std::array<uint8_t, 16> > g_StoredRIHashes;
 
 namespace transport
 {
@@ -101,6 +105,7 @@ namespace transport
 		if (in_RemoteRouter && m_Address)
 		{
 			// outgoing
+			m_RIBuffer = in_RemoteRouter->GetBufferBackup();
 			InitNoiseXKState1 (*m_NoiseState, m_Address->s);
 			m_RemoteEndpoint = boost::asio::ip::udp::endpoint (m_Address->host, m_Address->port);
 			m_RemoteTransports = in_RemoteRouter->GetCompatibleTransports (false);
@@ -118,22 +123,41 @@ namespace transport
 	{
 	}
 
-	void SSU2Session::LogResult(char result, int state)
+	void SSU2Session::LogResult(char result, uint8_t state)
 	{
-		std::stringstream ss;
-		time_t now = std::time(nullptr);
-		ss << "[" << std::put_time(std::gmtime(&now), "%Y.%m.%d %H:%M:%S") << "]: ";
-		ss << (IsOutgoing() ? 'O' : 'I') << ' ';
-		ss << result;
-		if (result != 'E')
-			ss << state;
-		ss << ' ';
-		int durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::stringstream ssres;
+		uint64_t ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::system_clock::now().time_since_epoch()).count();
+		uint16_t durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
 			std::chrono::high_resolution_clock::now() - m_CreationTimeHR).count();
-		ss << durationMs << " ";
-		ss << GetRemoteIdentity()->GetIdentHash().ToBase64();
-		std::unique_lock<std::mutex> l(i2p::g_SSU2cResultsMutex);
-		g_SSU2cResults.push_back(ss.str());
+		uint8_t isOutgoing = IsOutgoing();
+		std::array<uint8_t, 16> riHash;
+		MD5(m_RIBuffer.data(), m_RIBuffer.size(), riHash.data());
+
+		ssres.put(1);
+		ssres.write((const char*)&ts, 8);
+		ssres.put(isOutgoing);
+		ssres.put(result);
+		ssres.put(state);
+		ssres.write((const char*)&durationMs, 2);
+		ssres.write((const char*)riHash.data(), 16);
+
+		std::unique_lock<std::mutex> l(i2p::g_StatMutex);
+
+		if (i2p::g_StoredRIHashes.find(riHash) == i2p::g_StoredRIHashes.end())
+		{
+			uint16_t riSize = m_RIBuffer.size();
+			i2p::g_StoredRIHashes.insert(riHash);
+			std::stringstream ssri;
+			ssri.put(0);
+			ssri.write((const char*)&riSize, 2);
+			ssri.write((const char*)m_RIBuffer.data(), m_RIBuffer.size());
+			const std::string& ssris = ssri.str();
+			i2p::g_StatQueue.insert(i2p::g_StatQueue.end(), ssris.begin(), ssris.end());
+		}
+
+		const std::string& ssress = ssres.str();
+		i2p::g_StatQueue.insert(i2p::g_StatQueue.end(), ssress.begin(), ssress.end());
 	}
 
 	void SSU2Session::Connect ()
@@ -1110,6 +1134,7 @@ namespace transport
 			return false;
 		}
 		// update RouterInfo in netdb
+		m_RIBuffer = ri->GetBufferBackup();
 		ri = i2p::data::netdb.AddRouterInfo (ri->GetBuffer (), ri->GetBufferLen ()); // ri points to one from netdb now
 		if (!ri)
 		{
@@ -1548,7 +1573,10 @@ namespace transport
 					LogPrint (eLogDebug, "SSU2: RouterInfo");
 					auto ri = ExtractRouterInfo (buf + offset, size);
 					if (ri)
+					{
 						i2p::data::netdb.AddRouterInfo (ri->GetBuffer (), ri->GetBufferLen ());	// TODO: add ri
+						m_RIBuffer = ri->GetBufferBackup();
+					}
 					break;
 				}
 				case eSSU2BlkI2NPMessage:

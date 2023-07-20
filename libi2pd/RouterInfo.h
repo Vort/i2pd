@@ -263,6 +263,7 @@ namespace data
 			void ExcludeReachableTransports (CompatibleTransports transports) { m_ReachableTransports &= ~transports; };
 
 			const uint8_t * GetBuffer () const { return m_Buffer ? m_Buffer->data () : nullptr; };
+			const std::vector<uint8_t>& GetBufferBackup() const { return m_BufferBackup; }
 			const uint8_t * LoadBuffer (const std::string& fullPath); // load if necessary
 			size_t GetBufferLen () const { return m_BufferLen; };
 
@@ -319,6 +320,7 @@ namespace data
 			FamilyID m_FamilyID;
 			std::shared_ptr<const IdentityEx> m_RouterIdentity;
 			std::shared_ptr<Buffer> m_Buffer;
+			std::vector<uint8_t> m_BufferBackup;
 			size_t m_BufferLen;
 			uint64_t m_Timestamp; // in milliseconds
 			boost::shared_ptr<Addresses> m_Addresses; // TODO: use std::shared_ptr and std::atomic_store for gcc >= 4.9
