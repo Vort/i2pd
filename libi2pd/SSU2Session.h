@@ -42,6 +42,8 @@ namespace transport
 	const int SSU2_MAX_NUM_RECEIVED_I2NP_MSGIDS = 5000; // how many msgID we store for duplicates check
 	const int SSU2_RECEIVED_I2NP_MSGIDS_CLEANUP_TIMEOUT = 10; // in seconds
 	const int SSU2_DECAY_INTERVAL = 20; // in seconds
+	const int SSU2_KEEP_ALIVE_INTERVAL = 14; // in seconds
+	const int SSU2_KEEP_ALIVE_INTERVAL_VARIANCE = 4; // in seconds
 	const size_t SSU2_MIN_WINDOW_SIZE = 16; // in packets
 	const size_t SSU2_MAX_WINDOW_SIZE = 256; // in packets
 	const size_t SSU2_MIN_RTO = 100; // in milliseconds
@@ -246,7 +248,7 @@ namespace transport
 			bool Introduce (std::shared_ptr<SSU2Session> session, uint32_t relayTag);
 			void WaitForIntroduction ();
 			void SendPeerTest (); // Alice, Data message
-			void SendKeepAlive ();
+			void OnKeepAliveTimer (uint64_t ts);
 			void RequestTermination (SSU2TerminationReason reason);
 			void CleanUp (uint64_t ts);
 			void FlushData ();
@@ -259,6 +261,9 @@ namespace transport
 			uint64_t GetConnID () const { return m_SourceConnID; };
 			SSU2SessionState GetState () const { return m_State; };
 			void SetState (SSU2SessionState state) { m_State = state; };
+
+			uint32_t GetIntroducerSelectionTime() const { return m_IntroducerSelectionTime; };
+			void SetIntroducerSelectionTime(uint32_t ts) { m_IntroducerSelectionTime = ts; };
 
 			bool ProcessFirstIncomingMessage (uint64_t connID, uint8_t * buf, size_t len);
 			bool ProcessSessionCreated (uint8_t * buf, size_t len);
@@ -289,7 +294,7 @@ namespace transport
 			void KDFDataPhase (uint8_t * keydata_ab, uint8_t * keydata_ba);
 			void SendTokenRequest ();
 			void SendRetry ();
-			uint32_t SendData (const uint8_t * buf, size_t len, uint8_t flags = 0); // returns packet num
+			uint32_t SendData (const uint8_t * buf, size_t len, uint8_t flags = 0, bool updateActivity = true); // returns packet num
 			void SendQuickAck ();
 			void SendTermination ();
 			void SendHolePunch (uint32_t nonce, const boost::asio::ip::udp::endpoint& ep, const uint8_t * introKey, uint64_t token);
@@ -362,6 +367,9 @@ namespace transport
 			size_t m_MaxPayloadSize;
 			std::unique_ptr<i2p::data::IdentHash> m_PathChallenge;
 			std::unordered_map<uint32_t, uint32_t> m_ReceivedI2NPMsgIDs; // msgID -> timestamp in seconds
+			uint32_t m_IntroducerSelectionTime; // seconds since epoch
+			uint64_t m_LastKeepAliveActivityTimestamp;
+			int m_KeepAliveInterval;
 	};
 
 	inline uint64_t CreateHeaderMask (const uint8_t * kh, const uint8_t * nonce)

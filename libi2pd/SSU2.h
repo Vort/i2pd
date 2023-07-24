@@ -29,8 +29,6 @@ namespace transport
 	const size_t SSU2_MAX_NUM_INTRODUCERS = 3;
 	const int SSU2_TO_INTRODUCER_SESSION_DURATION = 3600; // 1 hour
 	const int SSU2_TO_INTRODUCER_SESSION_EXPIRATION = 4800; // 80 minutes
-	const int SSU2_KEEP_ALIVE_INTERVAL = 15; // in seconds
-	const int SSU2_KEEP_ALIVE_INTERVAL_VARIANCE = 4; // in seconds
 	const int SSU2_PROXY_CONNECT_RETRY_TIMEOUT = 30; // in seconds
 
 	class SSU2Server: private i2p::util::RunnableServiceWithWork
@@ -118,6 +116,9 @@ namespace transport
 			void ScheduleCleanup ();
 			void HandleCleanupTimer (const boost::system::error_code& ecode);
 
+			void ScheduleKeepAlive();
+			void HandleKeepAliveTimer(const boost::system::error_code& ecode);
+
 			void ScheduleResend (bool more);
 			void HandleResendTimer (const boost::system::error_code& ecode);
 
@@ -156,8 +157,8 @@ namespace transport
 			i2p::util::MemoryPool<SSU2SentPacket> m_SentPacketsPool;
 			i2p::util::MemoryPool<SSU2IncompleteMessage> m_IncompleteMessagesPool;
 			i2p::util::MemoryPool<SSU2IncompleteMessage::Fragment> m_FragmentsPool;
-			boost::asio::deadline_timer m_TerminationTimer, m_CleanupTimer, m_ResendTimer,
-				m_IntroducersUpdateTimer, m_IntroducersUpdateTimerV6;
+			boost::asio::deadline_timer m_TerminationTimer, m_CleanupTimer, m_KeepAliveTimer,
+				m_ResendTimer, m_IntroducersUpdateTimer, m_IntroducersUpdateTimerV6;
 			std::shared_ptr<SSU2Session> m_LastSession;
 			bool m_IsPublished; // if we maintain introducers
 			bool m_IsSyncClockFromPeers;

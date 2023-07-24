@@ -118,7 +118,6 @@ namespace transport
 			};
 
 			uint32_t GetCreationTime () const { return m_CreationTime; };
-			void SetCreationTime (uint32_t ts) { m_CreationTime = ts; }; // for introducers
 
 			virtual uint32_t GetRelayTag () const { return 0; };
 			virtual void SendLocalRouterInfo (bool update = false) { SendI2NPMessages ({ CreateDatabaseStoreMsg () }); };

@@ -84,10 +84,12 @@ namespace transport
 		m_Server (server), m_Address (addr), m_RemoteTransports (0),
 		m_DestConnID (0), m_SourceConnID (0), m_State (eSSU2SessionStateUnknown),
 		m_SendPacketNum (0), m_ReceivePacketNum (0), m_LastDatetimeSentPacketNum (0),
-		m_IsDataReceived (false), m_WindowSize (SSU2_MIN_WINDOW_SIZE),
+		m_IsDataReceived (false), m_IntroducerSelectionTime(0), m_WindowSize (SSU2_MIN_WINDOW_SIZE),
 		m_RTT (SSU2_RESEND_INTERVAL), m_RTO (SSU2_RESEND_INTERVAL*SSU2_kAPPA), m_RelayTag (0),
 		m_ConnectTimer (server.GetService ()), m_TerminationReason (eSSU2TerminationReasonNormalClose),
-		m_MaxPayloadSize (SSU2_MIN_PACKET_SIZE - IPV6_HEADER_SIZE - UDP_HEADER_SIZE - 32) // min size
+		m_MaxPayloadSize (SSU2_MIN_PACKET_SIZE - IPV6_HEADER_SIZE - UDP_HEADER_SIZE - 32), // min size
+		m_LastKeepAliveActivityTimestamp(0),
+		m_KeepAliveInterval(SSU2_KEEP_ALIVE_INTERVAL + rand() % SSU2_KEEP_ALIVE_INTERVAL_VARIANCE)
 	{
 		m_NoiseState.reset (new i2p::crypto::NoiseSymmetricState);
 		if (in_RemoteRouter && m_Address)
@@ -114,6 +116,8 @@ namespace transport
 	{
 		if (m_State == eSSU2SessionStateUnknown || m_State == eSSU2SessionStateTokenReceived)
 		{
+			auto abbr = i2p::data::GetIdentHashAbbreviation(GetRemoteIdentity()->GetIdentHash());
+			LogPrint(eLogDebug, "SSU2: Session connect with ", m_RemoteEndpoint, " (", abbr, ") initiated");
 			ScheduleConnectTimer ();
 			auto token = m_Server.FindOutgoingToken (m_RemoteEndpoint);
 			if (token)
@@ -134,16 +138,17 @@ namespace transport
 			shared_from_this (), std::placeholders::_1));
 	}
 
-	void SSU2Session::HandleConnectTimer (const boost::system::error_code& ecode)
+	void SSU2Session::HandleConnectTimer(const boost::system::error_code& ecode)
 	{
 		if (!ecode)
 		{
+			auto abbr = i2p::data::GetIdentHashAbbreviation(GetRemoteIdentity()->GetIdentHash());
 			// timeout expired
 			if (m_State == eSSU2SessionStateIntroduced) // WaitForIntroducer
-				LogPrint (eLogWarning, "SSU2: Session was not introduced after ", SSU2_CONNECT_TIMEOUT, " seconds");
+				LogPrint(eLogWarning, "SSU2: Session with ", abbr, " was not introduced after ", SSU2_CONNECT_TIMEOUT, " seconds");
 			else
-				LogPrint (eLogWarning, "SSU2: Session with ", m_RemoteEndpoint, " was not established after ", SSU2_CONNECT_TIMEOUT, " seconds");
-			Terminate ();
+				LogPrint(eLogWarning, "SSU2: Session with ", m_RemoteEndpoint, " (", abbr, ") was not established after ", SSU2_CONNECT_TIMEOUT, " seconds");
+			Terminate();
 		}
 	}
 
@@ -238,13 +243,24 @@ namespace transport
 		}
 	}
 
-	void SSU2Session::SendKeepAlive ()
+	void SSU2Session::OnKeepAliveTimer(uint64_t ts)
 	{
-		if (IsEstablished ())
+		if (IsEstablished () &&
+			ts > std::max(m_LastActivityTimestamp, m_LastKeepAliveActivityTimestamp) + m_KeepAliveInterval)
 		{
+			bool introducer = m_IntroducerSelectionTime != 0;
+
+			auto abbr = i2p::data::GetIdentHashAbbreviation(GetRemoteIdentity()->GetIdentHash());
+			if (introducer)
+				LogPrint(eLogDebug, "SSU2: Sending KeepAlive to introducer ", abbr);
+			else
+				LogPrint(eLogDebug, "SSU2: Sending KeepAlive to ", abbr);
+
 			uint8_t payload[20];
 			size_t payloadSize = CreatePaddingBlock (payload, 20, 8);
-			SendData (payload, payloadSize);
+			SendData (payload, payloadSize, 0, introducer);
+			m_LastKeepAliveActivityTimestamp = ts;
+			m_KeepAliveInterval = SSU2_KEEP_ALIVE_INTERVAL + rand() % SSU2_KEEP_ALIVE_INTERVAL_VARIANCE;
 		}
 	}
 
@@ -252,11 +268,21 @@ namespace transport
 	{
 		if (m_State != eSSU2SessionStateTerminated)
 		{
+			if (GetRemoteIdentity())
+			{
+				auto abbr = i2p::data::GetIdentHashAbbreviation(GetRemoteIdentity()->GetIdentHash());
+				LogPrint(eLogDebug, "SSU2: Session with ", abbr, " was terminated");
+			}
+			else
+				LogPrint(eLogDebug, "SSU2: Session was terminated");
 			m_State = eSSU2SessionStateTerminated;
 			m_ConnectTimer.cancel ();
 			m_OnEstablished = nullptr;
 			if (m_RelayTag)
-				m_Server.RemoveRelay (m_RelayTag);
+			{
+				LogPrint(eLogDebug, "SSU2: Tag removed ", m_RelayTag);
+				m_Server.RemoveRelay(m_RelayTag);
+			}
 			m_SentHandshakePacket.reset (nullptr);
 			m_SessionConfirmedFragment.reset (nullptr);
 			m_PathChallenge.reset (nullptr);
@@ -269,12 +295,18 @@ namespace transport
 			m_ReceivedI2NPMsgIDs.clear ();
 			m_Server.RemoveSession (m_SourceConnID);
 			transports.PeerDisconnected (shared_from_this ());
-			LogPrint (eLogDebug, "SSU2: Session terminated");
 		}
 	}
 
 	void SSU2Session::RequestTermination (SSU2TerminationReason reason)
 	{
+		std::string abbr;
+		if (GetRemoteIdentity())
+		{
+			abbr = std::string(" (") +
+				i2p::data::GetIdentHashAbbreviation(GetRemoteIdentity()->GetIdentHash()) + ")";
+		}
+		LogPrint(eLogDebug, "SSU2", abbr, ": Termination requested, code = ", (int)reason);
 		if (m_State == eSSU2SessionStateEstablished || m_State == eSSU2SessionStateClosing)
 		{
 			m_TerminationReason = reason;
@@ -285,6 +317,8 @@ namespace transport
 
 	void SSU2Session::Established ()
 	{
+		auto abbr = i2p::data::GetIdentHashAbbreviation(GetRemoteIdentity()->GetIdentHash());
+		LogPrint(eLogDebug, "SSU2: Session with ", abbr, " was established");
 		m_State = eSSU2SessionStateEstablished;
 		m_EphemeralKeys = nullptr;
 		m_NoiseState.reset (nullptr);
@@ -1418,7 +1452,7 @@ namespace transport
 		return true;
 	}
 
-	uint32_t SSU2Session::SendData (const uint8_t * buf, size_t len, uint8_t flags)
+	uint32_t SSU2Session::SendData (const uint8_t * buf, size_t len, uint8_t flags, bool updateActivity)
 	{
 		if (len < 8)
 		{
@@ -1439,7 +1473,8 @@ namespace transport
 		header.ll[1] ^= CreateHeaderMask (m_KeyDataSend + 32, payload + (len + 4));
 		m_Server.Send (header.buf, 16, payload, len + 16, m_RemoteEndpoint);
 		m_SendPacketNum++;
-		m_LastActivityTimestamp = i2p::util::GetSecondsSinceEpoch ();
+		if (updateActivity)
+			m_LastActivityTimestamp = i2p::util::GetSecondsSinceEpoch ();
 		m_NumSentBytes += len + 32;
 		return m_SendPacketNum - 1;
 	}
@@ -1489,6 +1524,13 @@ namespace transport
 
 	void SSU2Session::HandlePayload (const uint8_t * buf, size_t len)
 	{
+		std::string abbr;
+		if (GetRemoteIdentity())
+		{
+			abbr = std::string(" (") +
+				i2p::data::GetIdentHashAbbreviation(GetRemoteIdentity()->GetIdentHash()) + ")";
+		}
+
 		size_t offset = 0;
 		while (offset < len)
 		{
@@ -1496,7 +1538,7 @@ namespace transport
 			offset++;
 			auto size = bufbe16toh (buf + offset);
 			offset += 2;
-			LogPrint (eLogDebug, "SSU2: Block type ", (int)blk, " of size ", size);
+			LogPrint (eLogDebug, "SSU2", abbr, ": Block type ", (int)blk, " of size ", size);
 			if (offset + size > len)
 			{
 				LogPrint (eLogError, "SSU2: Unexpected block length ", size);
@@ -1595,12 +1637,13 @@ namespace transport
 					if (!m_RelayTag)
 					{
 						RAND_bytes ((uint8_t *)&m_RelayTag, 4);
+						LogPrint(eLogDebug, "SSU2: Tag created ", m_RelayTag);
 						m_Server.AddRelay (m_RelayTag, shared_from_this ());
 					}
 				break;
 				case eSSU2BlkRelayTag:
-					LogPrint (eLogDebug, "SSU2: RelayTag");
 					m_RelayTag = bufbe32toh (buf + offset);
+					LogPrint (eLogDebug, "SSU2: RelayTag ", m_RelayTag);
 				break;
 				case eSSU2BlkNewToken:
 				{

@@ -22,7 +22,8 @@ namespace transport
 		RunnableServiceWithWork ("SSU2"), m_ReceiveService ("SSU2r"),
 		m_SocketV4 (m_ReceiveService.GetService ()), m_SocketV6 (m_ReceiveService.GetService ()),
 		m_AddressV4 (boost::asio::ip::address_v4()), m_AddressV6 (boost::asio::ip::address_v6()),
-		m_TerminationTimer (GetService ()), m_CleanupTimer (GetService ()), m_ResendTimer (GetService ()),
+		m_TerminationTimer (GetService ()), m_CleanupTimer (GetService ()),
+		m_KeepAliveTimer(GetService()), m_ResendTimer (GetService ()),
 		m_IntroducersUpdateTimer (GetService ()), m_IntroducersUpdateTimerV6 (GetService ()),
 		m_IsPublished (true), m_IsSyncClockFromPeers (true), m_IsThroughProxy (false)
 	{
@@ -112,6 +113,7 @@ namespace transport
 			}
 			ScheduleTermination ();
 			ScheduleCleanup ();
+			ScheduleKeepAlive ();
 			ScheduleResend (false);
 		}
 	}
@@ -122,6 +124,7 @@ namespace transport
 		{
 			m_TerminationTimer.cancel ();
 			m_CleanupTimer.cancel ();
+			m_KeepAliveTimer.cancel();
 			m_ResendTimer.cancel ();
 			m_IntroducersUpdateTimer.cancel ();
 			m_IntroducersUpdateTimerV6.cancel ();
@@ -880,6 +883,29 @@ namespace transport
 		}
 	}
 
+	void SSU2Server::ScheduleKeepAlive()
+	{
+		m_KeepAliveTimer.expires_from_now(boost::posix_time::seconds(1));
+		m_KeepAliveTimer.async_wait(std::bind(&SSU2Server::HandleKeepAliveTimer,
+			this, std::placeholders::_1));
+	}
+
+	void SSU2Server::HandleKeepAliveTimer(const boost::system::error_code& ecode)
+	{
+		if (ecode != boost::asio::error::operation_aborted)
+		{
+			// Hack. In fact, introducers also needs to be checked for different v4/v6 interfaces
+			if (i2p::context.GetStatus() == eRouterStatusFirewalled)
+			{
+				auto ts = i2p::util::GetSecondsSinceEpoch();
+				for (auto it : m_Sessions)
+					it.second->OnKeepAliveTimer(ts);
+			}
+
+			ScheduleKeepAlive();
+		}
+	}
+
 	void SSU2Server::ScheduleResend (bool more)
 	{
 		m_ResendTimer.expires_from_now (boost::posix_time::milliseconds (more ? SSU2_RESEND_CHECK_MORE_TIMEOUT :
@@ -997,29 +1023,34 @@ namespace transport
 			}
 			if (session && session->IsEstablished ())
 			{
-				if (ts < session->GetCreationTime () + SSU2_TO_INTRODUCER_SESSION_EXPIRATION)
-				{	
-					session->SendKeepAlive ();
-					if (ts < session->GetCreationTime () + SSU2_TO_INTRODUCER_SESSION_DURATION)	
+				if (ts < session->GetIntroducerSelectionTime () + SSU2_TO_INTRODUCER_SESSION_EXPIRATION)
+				{
+					if (ts < session->GetIntroducerSelectionTime() + SSU2_TO_INTRODUCER_SESSION_DURATION)
 						newList.push_back (it);
-					else	
-					{	
+					else
+					{
 						impliedList.push_back (it); // keep in introducers list, but not publish
-						session = nullptr;	
+						session = nullptr;
 					}		
 				}	
 				else
+				{
+					session->SetIntroducerSelectionTime(0);
 					session = nullptr;
+				}
 			}
 			if (!session)
-				i2p::context.RemoveSSU2Introducer (it, v4);
+			{
+				auto abbr = i2p::data::GetIdentHashAbbreviation(it);
+				LogPrint(eLogDebug, "SSU2: Removing from RI introducer ", abbr);
+				i2p::context.RemoveSSU2Introducer(it, v4);
+			}
 		}
 		if (newList.size () < SSU2_MAX_NUM_INTRODUCERS)
 		{
 			auto sessions = FindIntroducers (SSU2_MAX_NUM_INTRODUCERS - newList.size (), v4, excluded);
 			if (sessions.empty () && !introducers.empty ())
 			{
-				// bump creation time for previous introducers if no new sessions found
 				LogPrint (eLogDebug, "SSU2: No new introducers found. Trying to reuse existing");
 				impliedList.clear ();
 				for (auto& it : introducers)
@@ -1030,7 +1061,6 @@ namespace transport
 						auto session = it1->second;
 						if (session->IsEstablished ())
 						{
-							session->SetCreationTime (session->GetCreationTime () + SSU2_TO_INTRODUCER_SESSION_DURATION);
 							if (std::find (newList.begin (), newList.end (), it) == newList.end ())
 								sessions.push_back (session);
 						}
@@ -1040,18 +1070,16 @@ namespace transport
 
 			for (const auto& it : sessions)
 			{
-				uint32_t exp = it->GetCreationTime () + SSU2_TO_INTRODUCER_SESSION_EXPIRATION;
-				if (ts + SSU2_TO_INTRODUCER_SESSION_DURATION/2 > exp)
-					continue; // don't pick too old session for introducer	
 				i2p::data::RouterInfo::Introducer introducer;
 				introducer.iTag = it->GetRelayTag ();
 				introducer.iH = it->GetRemoteIdentity ()->GetIdentHash ();
-				introducer.iExp = exp;
+				introducer.iExp = ts + SSU2_TO_INTRODUCER_SESSION_EXPIRATION;
 				excluded.insert (it->GetRemoteIdentity ()->GetIdentHash ());
 				if (i2p::context.AddSSU2Introducer (introducer, v4))
 				{
 					LogPrint (eLogDebug, "SSU2: Introducer added ", it->GetRelayTag (), " at ",
 						i2p::data::GetIdentHashAbbreviation (it->GetRemoteIdentity ()->GetIdentHash ()));
+					it->SetIntroducerSelectionTime(ts);
 					newList.push_back (it->GetRemoteIdentity ()->GetIdentHash ());
 					if (newList.size () >= SSU2_MAX_NUM_INTRODUCERS) break;
 				}
