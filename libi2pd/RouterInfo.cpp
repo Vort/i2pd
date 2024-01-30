@@ -26,8 +26,18 @@
 #include "RouterContext.h"
 #include "RouterInfo.h"
 
+#include <openssl/md5.h>
+#include <mutex>
+#include <vector>
+#include <set>
+#include <array>
+
 namespace i2p
 {
+	std::mutex g_StatMutex;
+	std::vector<uint8_t> g_StatQueue;
+	std::set<std::array<uint8_t, 16> > g_StoredRIHashes;
+
 namespace data
 {
 	RouterInfo::Buffer::Buffer (const uint8_t * buf, size_t len)
@@ -80,8 +90,30 @@ namespace data
 	{
 	}
 
+	void LogRI(const uint8_t * buf, size_t len)
+	{
+		uint64_t ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::system_clock::now().time_since_epoch()).count();
+		std::array<uint8_t, 16> riHash;
+		MD5(buf, len, riHash.data());
+
+		std::unique_lock<std::mutex> l(i2p::g_StatMutex);
+		if (i2p::g_StoredRIHashes.find(riHash) == i2p::g_StoredRIHashes.end())
+		{
+			uint16_t riSize = len;
+			i2p::g_StoredRIHashes.insert(riHash);
+			std::stringstream ssri;
+			ssri.write((const char*)&ts, 8);
+			ssri.write((const char*)&riSize, 2);
+			ssri.write((const char*)buf, len);
+			const std::string& ssris = ssri.str();
+			i2p::g_StatQueue.insert(i2p::g_StatQueue.end(), ssris.begin(), ssris.end());
+		}
+	}
+
 	bool RouterInfo::Update (const uint8_t * buf, size_t len)
 	{
+		LogRI(buf, len);
 		if (len > MAX_RI_BUFFER_SIZE)
 		{
 			LogPrint (eLogWarning, "RouterInfo: Updated buffer is too long ", len, ". Not changed");
@@ -162,6 +194,7 @@ namespace data
 			m_IsUnreachable = true;
 			return;
 		}
+		LogRI(m_Buffer->data(), m_BufferLen);
 		m_RouterIdentity = NewIdentity (m_Buffer->data (), m_BufferLen);
 		size_t identityLen = m_RouterIdentity->GetFullLen ();
 		if (identityLen >= m_BufferLen)
