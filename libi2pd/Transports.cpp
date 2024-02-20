@@ -376,6 +376,8 @@ namespace transport
 	{
 		TrafficSample& sample1 = m_TrafficSamples[m_TrafficSamplePtr];
 		TrafficSample& sample2 = m_TrafficSamples[(TRAFFIC_SAMPLE_COUNT + m_TrafficSamplePtr - interval) % TRAFFIC_SAMPLE_COUNT];
+		if (sample1.Timestamp <= sample2.Timestamp)
+			return;
 		auto delta = sample1.Timestamp - sample2.Timestamp;
 		in = (sample1.TotalReceivedBytes - sample2.TotalReceivedBytes) * 1000 / delta;
 		out = (sample1.TotalSentBytes - sample2.TotalSentBytes) * 1000 / delta;
