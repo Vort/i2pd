@@ -143,6 +143,7 @@ namespace transport
 		m_InBandwidth15s (0), m_OutBandwidth15s (0), m_TransitBandwidth15s (0),
 		m_InBandwidth5m (0), m_OutBandwidth5m (0), m_TransitBandwidth5m (0)
 	{
+		LogPrint(eLogCritical, "DeltaDebug: Transports timestamp = ", i2p::util::GetMillisecondsSinceEpoch());
 	}
 
 	Transports::~Transports ()
@@ -314,6 +315,8 @@ namespace transport
 		}
 		m_TrafficSamplePtr = TRAFFIC_SAMPLE_COUNT - 1;
 
+		LogPrint(eLogCritical, "DeltaDebug: Start timestamp = ", ts);
+
 		m_UpdateBandwidthTimer->expires_from_now (boost::posix_time::seconds(1));
 		m_UpdateBandwidthTimer->async_wait (std::bind (&Transports::HandleUpdateBandwidthTimer, this, std::placeholders::_1));
 
@@ -377,6 +380,9 @@ namespace transport
 		TrafficSample& sample1 = m_TrafficSamples[m_TrafficSamplePtr];
 		TrafficSample& sample2 = m_TrafficSamples[(TRAFFIC_SAMPLE_COUNT + m_TrafficSamplePtr - interval) % TRAFFIC_SAMPLE_COUNT];
 		auto delta = sample1.Timestamp - sample2.Timestamp;
+		LogPrint(eLogCritical, "DeltaDebug: UpdateBandwidthValues interval = ", interval, " delta = ", delta);
+		if (!delta)
+			return;
 		in = (sample1.TotalReceivedBytes - sample2.TotalReceivedBytes) * 1000 / delta;
 		out = (sample1.TotalSentBytes - sample2.TotalSentBytes) * 1000 / delta;
 		transit = (sample1.TotalTransitTransmittedBytes - sample2.TotalTransitTransmittedBytes) * 1000 / delta;
@@ -392,6 +398,9 @@ namespace transport
 
 			TrafficSample& sample = m_TrafficSamples[m_TrafficSamplePtr];
 			sample.Timestamp = i2p::util::GetMillisecondsSinceEpoch();
+
+			LogPrint(eLogCritical, "DeltaDebug: HandleUpdateBandwidthTimer sampleptr = ", m_TrafficSamplePtr, " timestamp = ", sample.Timestamp);
+
 			sample.TotalReceivedBytes = m_TotalReceivedBytes;
 			sample.TotalSentBytes = m_TotalSentBytes;
 			sample.TotalTransitTransmittedBytes = m_TotalTransitTransmittedBytes;
