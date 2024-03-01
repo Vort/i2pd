@@ -328,7 +328,11 @@ namespace transport
 	{
 		if (m_PeerCleanupTimer) m_PeerCleanupTimer->cancel ();
 		if (m_PeerTestTimer) m_PeerTestTimer->cancel ();
-		m_Peers.clear ();
+
+		{
+			std::unique_lock<std::recursive_mutex> l(m_PeersMutex);
+			m_Peers.clear ();
+		}
 
 		if (m_SSU2Server)
 		{
@@ -456,7 +460,8 @@ namespace transport
 			m_LoopbackHandler.Flush ();
 			return;
 		}
-		if(RoutesRestricted() && !IsRestrictedPeer(ident)) return;
+		if (RoutesRestricted () && !IsRestrictedPeer (ident)) return;
+		std::unique_lock<std::recursive_mutex> l(m_PeersMutex);
 		auto it = m_Peers.find (ident);
 		if (it == m_Peers.end ())
 		{
@@ -469,16 +474,13 @@ namespace transport
 			{
 				auto r = netdb.FindRouter (ident);
 				if (r && (r->IsUnreachable () || !r->IsReachableFrom (i2p::context.GetRouterInfo ()))) return; // router found but non-reachable
-				{
-					auto ts = i2p::util::GetSecondsSinceEpoch ();
-					std::unique_lock<std::mutex> l(m_PeersMutex);
-					it = m_Peers.insert (std::pair<i2p::data::IdentHash, Peer>(ident, {r, ts})).first;
-				}
+				auto ts = i2p::util::GetSecondsSinceEpoch ();
+				it = m_Peers.insert (std::pair<i2p::data::IdentHash, Peer>(ident, {r, ts})).first;
 				connected = ConnectToPeer (ident, it->second);
 			}
 			catch (std::exception& ex)
 			{
-				LogPrint (eLogError, "Transports: PostMessages exception:", ex.what ());
+				LogPrint (eLogError, "Transports: PostMessages exception: ", ex.what ());
 			}
 			if (!connected) return;
 		}
@@ -495,7 +497,6 @@ namespace transport
 					if (profile && profile->IsUnreachable ())
 					{
 						LogPrint (eLogWarning, "Transports: Peer profile for ", ident.ToBase64 (), " reports unreachable. Dropped");
-						std::unique_lock<std::mutex> l(m_PeersMutex);
 						m_Peers.erase (it);
 						return;
 					}	
@@ -510,7 +511,6 @@ namespace transport
 			{
 				LogPrint (eLogWarning, "Transports: Delayed messages queue size to ",
 					ident.ToBase64 (), " exceeds ", MAX_NUM_DELAYED_MESSAGES);
-				std::unique_lock<std::mutex> l(m_PeersMutex);
 				m_Peers.erase (it);
 			}
 		}
@@ -585,7 +585,7 @@ namespace transport
 			if (peer.router->IsReachableFrom (i2p::context.GetRouterInfo ()))
 				i2p::data::netdb.SetUnreachable (ident, true); // we are here because all connection attempts failed but router claimed them
 			peer.Done ();
-			std::unique_lock<std::mutex> l(m_PeersMutex);
+			std::unique_lock<std::recursive_mutex> l(m_PeersMutex);
 			m_Peers.erase (ident);
 			return false;
 		}
@@ -636,6 +636,7 @@ namespace transport
 
 	void Transports::HandleRequestComplete (std::shared_ptr<const i2p::data::RouterInfo> r, i2p::data::IdentHash ident)
 	{
+		std::unique_lock<std::recursive_mutex> l(m_PeersMutex);
 		auto it = m_Peers.find (ident);
 		if (it != m_Peers.end ())
 		{
@@ -649,7 +650,6 @@ namespace transport
 			else
 			{
 				LogPrint (eLogWarning, "Transports: RouterInfo not found, failed to send messages");
-				std::unique_lock<std::mutex> l(m_PeersMutex);
 				m_Peers.erase (it);
 			}
 		}
@@ -767,6 +767,7 @@ namespace transport
 			auto remoteIdentity = session->GetRemoteIdentity ();
 			if (!remoteIdentity) return;
 			auto ident = remoteIdentity->GetIdentHash ();
+			std::unique_lock<std::recursive_mutex> l(m_PeersMutex);
 			auto it = m_Peers.find (ident);
 			if (it != m_Peers.end ())
 			{
@@ -820,7 +821,6 @@ namespace transport
 				auto r = i2p::data::netdb.FindRouter (ident); // router should be in netdb after SessionConfirmed
 				if (r) r->GetProfile ()->Connected ();
 				auto ts = i2p::util::GetSecondsSinceEpoch ();
-				std::unique_lock<std::mutex> l(m_PeersMutex);
 				auto it = m_Peers.insert (std::make_pair (ident, Peer{ r, ts })).first;
 				it->second.sessions.push_back (session);
 				it->second.router = nullptr;
@@ -835,6 +835,7 @@ namespace transport
 			auto remoteIdentity = session->GetRemoteIdentity ();
 			if (!remoteIdentity) return;
 			auto ident = remoteIdentity->GetIdentHash ();
+			std::unique_lock<std::recursive_mutex> l(m_PeersMutex);
 			auto it = m_Peers.find (ident);
 			if (it != m_Peers.end ())
 			{
@@ -850,7 +851,6 @@ namespace transport
 					}
 					else
 					{
-						std::unique_lock<std::mutex> l(m_PeersMutex);
 						m_Peers.erase (it);
 					}
 				}
@@ -860,7 +860,7 @@ namespace transport
 
 	bool Transports::IsConnected (const i2p::data::IdentHash& ident) const
 	{
-		std::unique_lock<std::mutex> l(m_PeersMutex);
+		std::unique_lock<std::recursive_mutex> l(m_PeersMutex);
 		auto it = m_Peers.find (ident);
 		return it != m_Peers.end ();
 	}
@@ -870,36 +870,38 @@ namespace transport
 		if (ecode != boost::asio::error::operation_aborted)
 		{
 			auto ts = i2p::util::GetSecondsSinceEpoch ();
-			for (auto it = m_Peers.begin (); it != m_Peers.end (); )
 			{
-				it->second.sessions.remove_if (
-					[](std::shared_ptr<TransportSession> session)->bool
+				std::unique_lock<std::recursive_mutex> l(m_PeersMutex);
+				for (auto it = m_Peers.begin(); it != m_Peers.end(); )
+				{
+					it->second.sessions.remove_if (
+						[](std::shared_ptr<TransportSession> session)->bool
 					{
 						return !session || !session->IsEstablished ();
 					});
- 				if (!it->second.IsConnected () && ts > it->second.creationTime + SESSION_CREATION_TIMEOUT)
-				{
-					LogPrint (eLogWarning, "Transports: Session to peer ", it->first.ToBase64 (), " has not been created in ", SESSION_CREATION_TIMEOUT, " seconds");
-				/*	if (!it->second.router) 
-					{	 
-						// if router for ident not found mark it unreachable
-						auto profile = i2p::data::GetRouterProfile (it->first);
-						if (profile) profile->Unreachable ();
-					}	*/
-					std::unique_lock<std::mutex> l(m_PeersMutex);
-					it = m_Peers.erase (it);
-				}
-				else
-				{
-					if (ts > it->second.nextRouterInfoUpdateTime)
+					if (!it->second.IsConnected () && ts > it->second.creationTime + SESSION_CREATION_TIMEOUT)
 					{
-						auto session = it->second.sessions.front ();
-						if (session)
-							session->SendLocalRouterInfo (true);
-						it->second.nextRouterInfoUpdateTime = ts + PEER_ROUTER_INFO_UPDATE_INTERVAL +
-							rand () % PEER_ROUTER_INFO_UPDATE_INTERVAL_VARIANCE;
+						LogPrint (eLogWarning, "Transports: Session to peer ", it->first.ToBase64 (), " has not been created in ", SESSION_CREATION_TIMEOUT, " seconds");
+					/*	if (!it->second.router)
+						{
+							// if router for ident not found mark it unreachable
+							auto profile = i2p::data::GetRouterProfile (it->first);
+							if (profile) profile->Unreachable ();
+						}	*/
+						it = m_Peers.erase (it);
 					}
-					++it;
+					else
+					{
+						if (ts > it->second.nextRouterInfoUpdateTime)
+						{
+							auto session = it->second.sessions.front ();
+							if (session)
+								session->SendLocalRouterInfo (true);
+							it->second.nextRouterInfoUpdateTime = ts + PEER_ROUTER_INFO_UPDATE_INTERVAL +
+								rand () % PEER_ROUTER_INFO_UPDATE_INTERVAL_VARIANCE;
+						}
+						++it;
+					}
 				}
 			}
 			bool ipv4Testing = i2p::context.GetTesting ();
@@ -929,15 +931,14 @@ namespace transport
 	template<typename Filter>
 	std::shared_ptr<const i2p::data::RouterInfo> Transports::GetRandomPeer (Filter filter) const
 	{
-		if (m_Peers.empty()) return nullptr;
 		bool found = false;
 		i2p::data::IdentHash ident;
 		{
 			uint16_t inds[3];
 			RAND_bytes ((uint8_t *)inds, sizeof (inds));
-			std::unique_lock<std::mutex> l(m_PeersMutex);
+			std::unique_lock<std::recursive_mutex> l (m_PeersMutex);
 			auto count = m_Peers.size ();
-			if(count == 0) return nullptr;
+			if (count == 0) return nullptr;
 			inds[0] %= count;
 			auto it = m_Peers.begin ();
 			std::advance (it, inds[0]);

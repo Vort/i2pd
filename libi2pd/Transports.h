@@ -214,7 +214,7 @@ namespace transport
 
 			SSU2Server * m_SSU2Server;
 			NTCP2Server * m_NTCP2Server;
-			mutable std::mutex m_PeersMutex;
+			mutable std::recursive_mutex m_PeersMutex;
 			std::unordered_map<i2p::data::IdentHash, Peer> m_Peers;
 
 			X25519KeysPairSupplier m_X25519KeysPairSupplier;
