@@ -433,8 +433,14 @@ namespace stream
 					LogPrint(eLogError, "Streaming: Packet ", seqn, "sent from the future, sendTime=", sentPacket->sendTime);
 					rtt = 1;
 				}
-				m_RTT = std::round ((m_RTT*seqn + rtt)/(seqn + 1.0));
-				m_RTO = m_RTT*1.5; // TODO: implement it better
+				const double ewmaAlpha = 0.5;
+				int rttold = m_RTT;
+				if (seqn)
+					m_RTT = std::round (m_RTT * ewmaAlpha + (1.0 - ewmaAlpha) * rtt);
+				else
+					m_RTT = rtt;
+				m_RTO = m_RTT * 1.5; // TODO: implement it better
+				LogPrint(eLogError, "Stream::ProcessAck: RTT ", rttold, " -> ", m_RTT);
 				LogPrint (eLogDebug, "Streaming: Packet ", seqn, " acknowledged rtt=", rtt, " sentTime=", sentPacket->sendTime);
 				m_SentPackets.erase (it++);
 				m_LocalDestination.DeletePacket (sentPacket);
