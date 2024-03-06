@@ -1000,12 +1000,14 @@ namespace stream
 			// select tunnels if necessary and send
 			if (packets.size () > 0)
 			{
+				int windowCorrection;
 				m_NumResendAttempts++;
 				m_RTO *= 2;
 				switch (m_NumResendAttempts)
 				{
-					case 1: // congesion avoidance
-						m_WindowSize >>= 1; // /2
+					case 1: // congestion avoidance
+						windowCorrection = m_WindowSize / 10;
+						m_WindowSize -= windowCorrection ? windowCorrection : 1;
 						if (m_WindowSize < MIN_WINDOW_SIZE) m_WindowSize = MIN_WINDOW_SIZE;
 					break;
 					case 2:
