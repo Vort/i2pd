@@ -72,7 +72,7 @@ namespace stream
 		m_Status (eStreamStatusNew), m_IsAckSendScheduled (false), m_LocalDestination (local),
 		m_RemoteLeaseSet (remote), m_ReceiveTimer (m_Service), m_ResendTimer (m_Service),
 		m_AckSendTimer (m_Service), m_NumSentBytes (0), m_NumReceivedBytes (0), m_Port (port),
-		m_WindowSize (MIN_WINDOW_SIZE), m_RTT (INITIAL_RTT), m_RTO (INITIAL_RTO),
+		m_WindowSize (MIN_WINDOW_SIZE), m_SRTT (INITIAL_RTT), m_RTTVAR (0.0), m_RTO (INITIAL_RTO),
 		m_AckDelay (local.GetOwner ()->GetStreamingAckDelay ()),
 		m_LastWindowSizeIncreaseTime (0), m_NumResendAttempts (0), m_MTU (STREAMING_MTU)
 	{
@@ -85,7 +85,8 @@ namespace stream
 		m_Status (eStreamStatusNew), m_IsAckSendScheduled (false), m_LocalDestination (local),
 		m_ReceiveTimer (m_Service), m_ResendTimer (m_Service), m_AckSendTimer (m_Service),
 		m_NumSentBytes (0), m_NumReceivedBytes (0), m_Port (0), m_WindowSize (MIN_WINDOW_SIZE),
-		m_RTT (INITIAL_RTT), m_RTO (INITIAL_RTO), m_AckDelay (local.GetOwner ()->GetStreamingAckDelay ()),
+		m_SRTT (INITIAL_RTT), m_RTTVAR (0.0), m_RTO (INITIAL_RTO),
+		m_AckDelay (local.GetOwner ()->GetStreamingAckDelay ()),
 		m_LastWindowSizeIncreaseTime (0), m_NumResendAttempts (0), m_MTU (STREAMING_MTU)
 	{
 		RAND_bytes ((uint8_t *)&m_RecvStreamID, 4);
@@ -186,7 +187,7 @@ namespace stream
 			{
 				if (!m_IsAckSendScheduled)
 				{
-					auto ackTimeout = m_RTT/10;
+					int ackTimeout = std::round (m_SRTT / 10);
 					if (ackTimeout > m_AckDelay) ackTimeout = m_AckDelay;
 					ScheduleAck (ackTimeout);
 				}
@@ -280,7 +281,7 @@ namespace stream
 			if (!m_IsAckSendScheduled)
 			{
 				uint16_t delayRequested = bufbe16toh (optionData);
-				if (delayRequested > 0 && delayRequested < m_RTT)
+				if (delayRequested > 0 && delayRequested < m_SRTT)
 				{
 					m_IsAckSendScheduled = true;
 					m_AckSendTimer.expires_from_now (boost::posix_time::milliseconds(delayRequested));
@@ -433,11 +434,19 @@ namespace stream
 					LogPrint(eLogError, "Streaming: Packet ", seqn, "sent from the future, sendTime=", sentPacket->sendTime);
 					rtt = 1;
 				}
-				if (seqn)
-					m_RTT = std::round (RTT_EWMA_ALPHA * m_RTT + (1.0 - RTT_EWMA_ALPHA) * rtt);
+				if (!seqn)
+				{
+					m_SRTT = rtt;
+					m_RTTVAR = rtt / 2;
+				}
 				else
-					m_RTT = rtt;
-				m_RTO = m_RTT*1.5; // TODO: implement it better
+				{
+					m_RTTVAR = (1.0 - RTT_EWMA_BETA) * m_RTTVAR + RTT_EWMA_BETA * std::abs (m_SRTT - rtt);
+					m_SRTT = (1.0 - RTT_EWMA_ALPHA) * m_SRTT + RTT_EWMA_ALPHA * rtt;
+				}
+				m_RTO = m_SRTT + std::max (RTO_G, RTO_K * m_RTTVAR);
+				LogPrint (eLogError, "ProcessAck | id ", GetSendStreamID (), " seq ",
+					seqn, " SRTT ", (int)(m_SRTT * 1000), " RTTVAR ", (int)(m_RTTVAR * 1000), " RTO ", m_RTO);
 				LogPrint (eLogDebug, "Streaming: Packet ", seqn, " acknowledged rtt=", rtt, " sentTime=", sentPacket->sendTime);
 				m_SentPackets.erase (it++);
 				m_LocalDestination.DeletePacket (sentPacket);
@@ -447,7 +456,7 @@ namespace stream
 				else
 				{
 					// linear growth
-					if (ts > m_LastWindowSizeIncreaseTime + m_RTT)
+					if (ts > m_LastWindowSizeIncreaseTime + m_SRTT)
 					{
 						m_WindowSize++;
 						if (m_WindowSize > MAX_WINDOW_SIZE) m_WindowSize = MAX_WINDOW_SIZE;
@@ -457,7 +466,7 @@ namespace stream
 				if (!seqn && m_RoutingSession) // first message confirmed
 					m_RoutingSession->SetSharedRoutingPath (
 						std::make_shared<i2p::garlic::GarlicRoutingPath> (
-							i2p::garlic::GarlicRoutingPath{m_CurrentOutboundTunnel, m_CurrentRemoteLease, m_RTT, 0, 0}));
+							i2p::garlic::GarlicRoutingPath{m_CurrentOutboundTunnel, m_CurrentRemoteLease, (int)m_SRTT, 0, 0}));
 			}
 			else
 				break;
@@ -880,8 +889,9 @@ namespace stream
 			{
 				m_CurrentOutboundTunnel = routingPath->outboundTunnel;
 				m_CurrentRemoteLease = routingPath->remoteLease;
-				m_RTT = routingPath->rtt;
-				m_RTO = m_RTT*1.5; // TODO: implement it better
+				m_SRTT = routingPath->rtt;
+				m_RTTVAR = routingPath->rtt / 2;
+				m_RTO = m_SRTT + std::max (RTO_G, RTO_K * m_RTTVAR);
 			}
 		}
 

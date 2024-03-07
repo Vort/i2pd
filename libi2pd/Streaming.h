@@ -57,7 +57,10 @@ namespace stream
 	const int MIN_WINDOW_SIZE = 1;
 	const int MAX_WINDOW_SIZE = 128;
 	const int WINDOW_SIZE_DROP_FRACTION = 10; // 1/10
-	const double RTT_EWMA_ALPHA = 0.5;
+	const double RTT_EWMA_ALPHA = 0.125;
+	const double RTT_EWMA_BETA = 0.25;
+	const double RTO_G = 1.0;
+	const double RTO_K = 4.0;
 	const int INITIAL_RTT = 8000; // in milliseconds
 	const int INITIAL_RTO = 9000; // in milliseconds
 	const int MIN_SEND_ACK_TIMEOUT = 2; // in milliseconds
@@ -201,7 +204,7 @@ namespace stream
 			size_t GetReceiveQueueSize () const { return m_ReceiveQueue.size (); };
 			size_t GetSendBufferSize () const { return m_SendBuffer.GetSize (); };
 			int GetWindowSize () const { return m_WindowSize; };
-			int GetRTT () const { return m_RTT; };
+			int GetRTT () const { return std::round (m_SRTT); };
 
 			void Terminate (bool deleteFromDestination = true);
 
@@ -254,7 +257,9 @@ namespace stream
 			uint16_t m_Port;
 
 			SendBufferQueue m_SendBuffer;
-			int m_WindowSize, m_RTT, m_RTO, m_AckDelay;
+			int m_WindowSize;
+			double m_SRTT, m_RTTVAR;
+			int m_RTO, m_AckDelay;
 			uint64_t m_LastWindowSizeIncreaseTime;
 			int m_NumResendAttempts;
 			size_t m_MTU;
