@@ -353,25 +353,38 @@ namespace transport
 	void SSU2Session::PostI2NPMessages (std::vector<std::shared_ptr<I2NPMessage> > msgs)
 	{
 		if (m_State == eSSU2SessionStateTerminated) return;
-		uint64_t mts = i2p::util::GetMonotonicMicroseconds ();
-		uint64_t localExpiration = mts + I2NP_MESSAGE_LOCAL_EXPIRATION_TIMEOUT;
+		int64_t queueLag = 0;
 		bool isSemiFull = false;
+		uint64_t mts = i2p::util::GetMonotonicMicroseconds ();
 		if (m_SendQueue.size ())
 		{
-			isSemiFull = m_SendQueue.front ()->IsLocalSemiExpired (mts);
-			if (isSemiFull)
-			{
-				LogPrint (eLogWarning, "SSU2: Outgoing messages queue to ",
-					GetIdentHashBase64 (), " is semi-full (", m_SendQueue.size (), ")");
-			}
+			queueLag = (int64_t)mts - (int64_t)m_SendQueue.front ()->GetEnqueueTime ();
+			isSemiFull = queueLag > I2NP_MESSAGE_LOCAL_SEMI_EXPIRATION_TIMEOUT;
 		}
 		for (auto it: msgs)
 		{
-			if (isSemiFull && it->onDrop)
-				it->Drop (); // drop earlier because we can handle it
+			bool toDrop = false;
+			if (isSemiFull)
+			{
+				if (it->onDrop)
+					toDrop = true; // drop earlier because we can handle it
+				else
+				{
+					int dropChance = 100 * (queueLag - I2NP_MESSAGE_LOCAL_SEMI_EXPIRATION_TIMEOUT) / 
+						(I2NP_MESSAGE_LOCAL_EXPIRATION_TIMEOUT - I2NP_MESSAGE_LOCAL_SEMI_EXPIRATION_TIMEOUT);
+					toDrop = dropChance > rand () % 100;
+				}
+			}
+			if (toDrop)
+			{
+				LogPrint (eLogWarning, "SSU2: Outgoing message to ", GetIdentHashBase64 (),
+					" is dropped", it->onDrop ? " [onDrop]" : "",
+					" (lag = ", queueLag / 1000, ", queue size = ", m_SendQueue.size (), ")");
+				it->Drop ();
+			}
 			else
 			{
-				it->SetLocalExpiration (localExpiration);
+				it->SetEnqueueTime (mts);
 				m_SendQueue.push_back (std::move (it));
 			}
 		}
@@ -395,7 +408,7 @@ namespace transport
 			while (!m_SendQueue.empty () && m_SentPackets.size () <= m_WindowSize)
 			{
 				auto msg = m_SendQueue.front ();
-				if (!msg || msg->IsExpired (ts) || msg->IsLocalExpired (mts))
+				if (!msg || msg->IsExpired (ts))
 				{
 					// drop null or expired message
 					if (msg) msg->Drop ();
