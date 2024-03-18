@@ -438,7 +438,12 @@ namespace stream
 				else
 					rttUpdated = false;
 				if (rttUpdated)
+				{
+					bool wasInitial = m_RTO == INITIAL_RTO;
 					m_RTO = m_RTT * 1.5; // TODO: implement it better
+					if (wasInitial)
+						ScheduleResend ();
+				}
 				LogPrint (eLogDebug, "Streaming: Packet ", seqn, " acknowledged rtt=", rtt, " sentTime=", sentPacket->sendTime);
 				m_SentPackets.erase (it++);
 				m_LocalDestination.DeletePacket (sentPacket);
