@@ -830,6 +830,7 @@ namespace stream
 		m_LocalDestination.GetOwner ()->Sign (packet, size, signature);
 
 		p->len = size;
+		p->sendTime = i2p::util::GetMillisecondsSinceEpoch ();
 		m_Service.post (std::bind (&Stream::SendPacket, shared_from_this (), p));
 		LogPrint (eLogDebug, "Streaming: FIN sent, sSID=", m_SendStreamID);
 	}
