@@ -440,13 +440,23 @@ namespace stream
 					rttSample = rtt < 0 ? 1 : rtt;
 				}
 				else if (!sentPacket->resent && seqn > m_TunnelsChangeSequenceNumber && rtt >= 0)
+				{
 					rttSample = std::min (rttSample, (int)rtt);
+					LogPrint (eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " good_rtt ", rtt);
+				}
+				else
+				{
+					LogPrint (eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " skipped_rtt ", rtt);
+				}
 				LogPrint (eLogDebug, "Streaming: Packet ", seqn, " acknowledged rtt=", rtt, " sentTime=", sentPacket->sendTime);
 				m_SentPackets.erase (it++);
 				m_LocalDestination.DeletePacket (sentPacket);
 				acknowledged = true;
 				if (m_WindowSize < WINDOW_SIZE)
+				{
 					m_WindowSize++; // slow start
+					LogPrint(eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " m_WindowSize ", m_WindowSize);
+				}
 			}
 			else
 				break;
@@ -459,6 +469,10 @@ namespace stream
 				m_RTT = RTT_EWMA_ALPHA * rttSample + (1.0 - RTT_EWMA_ALPHA) * m_RTT;
 			bool wasInitial = m_RTO == INITIAL_RTO;
 			m_RTO = std::max (MIN_RTO, (int)(m_RTT * 1.5)); // TODO: implement it better
+
+			LogPrint(eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " m_RTT ", (int)(m_RTT * 1000));
+			LogPrint(eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " m_RTO ", m_RTO);
+
 			if (wasInitial)
 				ScheduleResend ();
 		}
@@ -469,6 +483,7 @@ namespace stream
 			{
 				m_WindowSize++;
 				if (m_WindowSize > MAX_WINDOW_SIZE) m_WindowSize = MAX_WINDOW_SIZE;
+				LogPrint(eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " m_WindowSize ", m_WindowSize);
 				m_LastWindowSizeIncreaseTime = ts;
 			}
 		}
@@ -864,6 +879,7 @@ namespace stream
 			}
 			SendPackets (std::vector<Packet *> { packet });
 			bool isEmpty = m_SentPackets.empty ();
+			packet->sendTime = i2p::util::GetMillisecondsSinceEpoch ();
 			m_SentPackets.insert (packet);
 			if (isEmpty)
 				ScheduleResend ();
@@ -896,6 +912,9 @@ namespace stream
 				m_CurrentRemoteLease = routingPath->remoteLease;
 				m_RTT = routingPath->rtt;
 				m_RTO = std::max (MIN_RTO, (int)(m_RTT * 1.5)); // TODO: implement it better
+				LogPrint(eLogError, "[routingPath]");
+				LogPrint(eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " m_RTT ", (int)(m_RTT * 1000));
+				LogPrint(eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " m_RTO ", m_RTO);
 			}
 		}
 
@@ -1014,16 +1033,21 @@ namespace stream
 			{
 				m_NumResendAttempts++;
 				if (m_RTO != INITIAL_RTO)
+				{
 					m_RTO *= 2;
+					LogPrint(eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " m_RTO ", m_RTO);
+				}
 				switch (m_NumResendAttempts)
 				{
 					case 1: // congestion avoidance
 						m_WindowSize -= (m_WindowSize + WINDOW_SIZE_DROP_FRACTION) / WINDOW_SIZE_DROP_FRACTION; // adjustment >= 1
 						if (m_WindowSize < MIN_WINDOW_SIZE) m_WindowSize = MIN_WINDOW_SIZE;
+						LogPrint(eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " m_WindowSize ", m_WindowSize);
 					break;
 					case 2:
 						m_TunnelsChangeSequenceNumber = m_SequenceNumber;
 						m_RTO = INITIAL_RTO; // drop RTO to initial upon tunnels pair change first time
+						LogPrint(eLogError, "sSID ", m_SendStreamID, " ts ", i2p::util::GetMonotonicMicroseconds(), " m_RTO ", m_RTO);
 #if (__cplusplus >= 201703L) // C++ 17 or higher
 						[[fallthrough]];
 #endif
