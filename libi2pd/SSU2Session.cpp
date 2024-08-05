@@ -91,7 +91,7 @@ namespace transport
 		m_RTO (SSU2_INITIAL_RTO), m_RelayTag (0),m_ConnectTimer (server.GetService ()), 
 		m_TerminationReason (eSSU2TerminationReasonNormalClose),
 		m_MaxPayloadSize (SSU2_MIN_PACKET_SIZE - IPV6_HEADER_SIZE - UDP_HEADER_SIZE - 32), // min size
-		m_LastResendTime (0)
+		m_LastResendTime (0), m_RTTUpdateTime (0)
 	{
 		m_NoiseState.reset (new i2p::crypto::NoiseSymmetricState);
 		if (in_RemoteRouter && m_Address)
@@ -1814,7 +1814,7 @@ namespace transport
 		int numPackets = 0;
 		while (it1 != m_SentPackets.end () && it1->first <= lastPacketNum)
 		{
-			if (ts && !it1->second->numResends)
+			if (ts && ts > m_RTTUpdateTime && !it1->second->numResends)
 			{
 				if (ts > it1->second->sendTime)
 				{
@@ -1824,6 +1824,7 @@ namespace transport
 					else
 						m_RTT = rtt;
 					m_RTO = m_RTT*SSU2_kAPPA;
+					m_RTTUpdateTime = ts + m_RTT;
 					m_MsgLocalExpirationTimeout = std::max (I2NP_MESSAGE_LOCAL_EXPIRATION_TIMEOUT_MIN,
 						std::min (I2NP_MESSAGE_LOCAL_EXPIRATION_TIMEOUT_MAX,
 						(unsigned int)(m_RTT * 1000 * I2NP_MESSAGE_LOCAL_EXPIRATION_TIMEOUT_FACTOR)));

@@ -374,6 +374,7 @@ namespace transport
 			std::unique_ptr<i2p::data::IdentHash> m_PathChallenge;
 			std::unordered_map<uint32_t, uint32_t> m_ReceivedI2NPMsgIDs; // msgID -> timestamp in seconds
 			uint64_t m_LastResendTime; // in milliseconds
+			uint64_t m_RTTUpdateTime; // in milliseconds
 	};
 
 	inline uint64_t CreateHeaderMask (const uint8_t * kh, const uint8_t * nonce)
