@@ -7,7 +7,7 @@ CXXFLAGS := $(CXX_DEBUG) -fPIC -msse
 INCFLAGS := -I$(DAEMON_SRC_DIR) -IWin32
 LDFLAGS := ${LD_DEBUG} -static -fPIC -msse
 
-NEEDED_CXXFLAGS += -std=c++17
+NEEDED_CXXFLAGS += -std=c++20
 DEFINES += -DWIN32_LEAN_AND_MEAN
 
 # UPNP Support
