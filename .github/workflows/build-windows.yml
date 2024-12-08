@@ -118,11 +118,13 @@ jobs:
 
     steps:
     - name: Checkout
+      if: always()
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
     - name: Setup MSYS2
+      if: always()
       uses: msys2/setup-msys2@v2
       with:
         msystem: MINGW32
@@ -131,6 +133,7 @@ jobs:
         update: true
 
     - name: Clone MinGW packages repository and revert boost to 1.85.0
+      if: always()
       run: |
         git clone https://github.com/msys2/MINGW-packages
         cd MINGW-packages
@@ -138,81 +141,93 @@ jobs:
 
     # headers
     - name: Get headers package version
+      if: always()
       id:  version-headers
       run: |
         echo "version=$(pacman -Si mingw-w64-i686-headers-git | grep -Po '^Version\s*: \K.+')" >> $GITHUB_OUTPUT
     - name: Cache headers package
+      if: always()
       uses: actions/cache@v4
       id: cache-headers
       with:
         path: MINGW-packages/mingw-w64-headers-git/*.zst
         key: winxp-headers-${{ steps.version-headers.outputs.version }}
     - name: Build WinXP-capable headers package
-      if: steps.cache-headers.outputs.cache-hit != 'true'
+      if: always()
       run: |
         cd MINGW-packages/mingw-w64-headers-git
         sed -i 's/0x601/0x501/' PKGBUILD
         MINGW_ARCH=mingw32 makepkg-mingw -sCLf --noconfirm --nocheck
     - name: Install headers package
+      if: always()
       run: pacman --noconfirm -U MINGW-packages/mingw-w64-headers-git/mingw-w64-i686-*-any.pkg.tar.zst
 
     # CRT
     - name: Get crt package version
+      if: always()
       id:  version-crt
       run: |
         echo "version=$(pacman -Si mingw-w64-i686-crt-git | grep -Po '^Version\s*: \K.+')" >> $GITHUB_OUTPUT
     - name: Cache crt package
+      if: always()
       uses: actions/cache@v4
       id: cache-crt
       with:
         path: MINGW-packages/mingw-w64-crt-git/*.zst
         key: winxp-crt-${{ steps.version-crt.outputs.version }}
     - name: Build WinXP-capable crt package
-      if: steps.cache-crt.outputs.cache-hit != 'true'
+      if: always()
       run: |
         cd MINGW-packages/mingw-w64-crt-git
         MINGW_ARCH=mingw32 makepkg-mingw -sCLf --noconfirm --nocheck
     - name: Install crt package
+      if: always()
       run: pacman --noconfirm -U MINGW-packages/mingw-w64-crt-git/mingw-w64-i686-*-any.pkg.tar.zst
 
     # winpthreads
     - name: Get winpthreads package version
+      if: always()
       id:  version-winpthreads
       run: |
         echo "version=$(pacman -Si mingw-w64-i686-winpthreads-git | grep -Po '^Version\s*: \K.+')" >> $GITHUB_OUTPUT
     - name: Cache winpthreads package
+      if: always()
       uses: actions/cache@v4
       id: cache-winpthreads
       with:
         path: MINGW-packages/mingw-w64-winpthreads-git/*.zst
         key: winxp-winpthreads-${{ steps.version-winpthreads.outputs.version }}
     - name: Build WinXP-capable winpthreads package
-      if: steps.cache-winpthreads.outputs.cache-hit != 'true'
+      if: always()
       run: |
         cd MINGW-packages/mingw-w64-winpthreads-git
         MINGW_ARCH=mingw32 makepkg-mingw -sCLf --noconfirm --nocheck
     - name: Install winpthreads package
+      if: always()
       run: pacman --noconfirm -U MINGW-packages/mingw-w64-winpthreads-git/mingw-w64-i686-*-any.pkg.tar.zst
 
     # OpenSSL
     - name: Get openssl package version
+      if: always()
       id:  version-openssl
       run: |
         echo "version=$(pacman -Si mingw-w64-i686-openssl | grep -Po '^Version\s*: \K.+')" >> $GITHUB_OUTPUT
     - name: Cache openssl package
+      if: always()
       uses: actions/cache@v4
       id: cache-openssl
       with:
         path: MINGW-packages/mingw-w64-openssl/*.zst
         key: winxp-openssl-${{ steps.version-openssl.outputs.version }}
     - name: Build WinXP-capable openssl package
-      if: steps.cache-openssl.outputs.cache-hit != 'true'
+      if: always()
       run: |
         cd MINGW-packages/mingw-w64-openssl
         gpg --recv-keys D894E2CE8B3D79F5
         gpg --recv-keys 216094DFD0CB81EF
         MINGW_ARCH=mingw32 makepkg-mingw -sCLf --noconfirm --nocheck
     - name: Install openssl package
+      if: always()
       run: pacman --noconfirm -U MINGW-packages/mingw-w64-openssl/mingw-w64-i686-*-any.pkg.tar.zst
 
     # Boost
@@ -221,6 +236,7 @@ jobs:
     #  run: |
     #    echo "version=$(pacman -Si mingw-w64-i686-boost | grep -Po '^Version\s*: \K.+')" >> $GITHUB_OUTPUT
     - name: Cache boost package
+      if: always()
       uses: actions/cache@v4
       id: cache-boost
       with:
@@ -228,20 +244,23 @@ jobs:
         key: winxp-boost-1.85.0+crt-${{ steps.version-headers.outputs.version }}+ossl-${{ steps.version-openssl.outputs.version }}
     # Rebuild package if packages above has changed
     - name: Build WinXP-capable boost package
-      if: steps.cache-boost.outputs.cache-hit != 'true'
+      if: always()
       run: |
         cd MINGW-packages/mingw-w64-boost
         MINGW_ARCH=mingw32 makepkg-mingw -sCLf --noconfirm --nocheck
     - name: Install boost package
+      if: always()
       run: pacman --noconfirm -U MINGW-packages/mingw-w64-boost/mingw-w64-i686-*-any.pkg.tar.zst
 
     # Building i2pd
     - name: Build application
+      if: always()
       run: |
         mkdir -p obj/Win32 obj/libi2pd obj/libi2pd_client obj/daemon
         make USE_UPNP=yes DEBUG=no USE_GIT_VERSION=yes USE_WINXP_FLAGS=yes -j3
 
     - name: Upload artifacts
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: i2pd-xp.exe
