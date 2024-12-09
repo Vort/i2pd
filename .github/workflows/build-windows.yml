@@ -232,8 +232,8 @@ jobs:
       run: |
         cd MINGW-packages/mingw-w64-boost
         MINGW_ARCH=mingw32 makepkg-mingw -sCLf --noconfirm --nocheck
-    - name: Remove boost-libs package
-      run: pacman --noconfirm -R mingw-w64-i686-boost-libs
+    - name: Remove boost packages
+      run: pacman --noconfirm -R mingw-w64-i686-boost mingw-w64-i686-boost-libs
 
     - name: Install boost package
       run: pacman --noconfirm -U MINGW-packages/mingw-w64-boost/mingw-w64-i686-*-any.pkg.tar.zst
