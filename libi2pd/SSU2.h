@@ -20,6 +20,7 @@
 #include "SSU2Session.h"
 #include "SSU2OutOfSession.h"
 #include "Socks5.h"
+#include "Log.h"
 
 namespace i2p
 {
@@ -46,6 +47,16 @@ namespace transport
 	const int SSU2_MIN_HOLE_PUNCH_EXPIRATION = 30; // in seconds
 	const int SSU2_MAX_HOLE_PUNCH_EXPIRATION = 160; // in seconds
 	const size_t SSU2_MAX_NUM_PACKETS_PER_BATCH = 64;
+
+	inline void SSU2Checkpoint(int index)
+	{
+		static uint64_t prevTs = 0;
+		uint64_t newTs = i2p::util::GetMonotonicMicroseconds();
+		uint64_t deltaTs = newTs - prevTs;
+		prevTs = newTs;
+		if (index != 0 && deltaTs > 10000)
+			LogPrint(eLogError, "SSU2Checkpoint ", index, " delta ", deltaTs, " us");
+	}
 
 	class SSU2Server: private i2p::util::RunnableServiceWithWork
 	{

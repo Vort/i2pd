@@ -474,15 +474,20 @@ namespace transport
 			boost::asio::post (GetService (), [this]() { HandleReceivedPacketsQueue (); });
 	}	
 		
-	void SSU2Server::HandleReceivedPacketsQueue ()
+	void SSU2Server::HandleReceivedPacketsQueue()
 	{
-		std::list<Packet *> receivedPackets;
+		std::list<Packet*> receivedPackets;
 		{
 			std::lock_guard<std::mutex> l(m_ReceivedPacketsQueueMutex);
-			m_ReceivedPacketsQueue.swap (receivedPackets);
+			m_ReceivedPacketsQueue.swap(receivedPackets);
 		}
-		HandleReceivedPackets (std::move (receivedPackets));
-	}	
+		size_t size = receivedPackets.size();
+		uint64_t ts1 = i2p::util::GetMonotonicMicroseconds();
+		SSU2Checkpoint(0);
+		HandleReceivedPackets(std::move(receivedPackets));
+		uint64_t ts2 = i2p::util::GetMonotonicMicroseconds();
+		LogPrint(eLogError, "HandleReceivedPacketsQueue size ", size, " duration ", ts2 - ts1, " us");
+	}
 		
 	bool SSU2Server::AddSession (std::shared_ptr<SSU2Session> session)
 	{
@@ -684,6 +689,7 @@ namespace transport
 	void SSU2Server::ProcessNextPacket (uint8_t * buf, size_t len, const boost::asio::ip::udp::endpoint& senderEndpoint)
 	{
 		if (len < 24) return;
+		SSU2Checkpoint(1);
 		uint64_t connID;
 		memcpy (&connID, buf, 8);
 		connID ^= CreateHeaderMask (i2p::context.GetSSU2IntroKey (), buf + (len - 24));
@@ -696,6 +702,7 @@ namespace transport
 			else
 				m_LastSession = nullptr;
 		}
+		SSU2Checkpoint(2);
 		if (m_LastSession)
 		{
 			switch (m_LastSession->GetState ())
@@ -703,6 +710,7 @@ namespace transport
 				case eSSU2SessionStateEstablished:
 				case eSSU2SessionStateSessionConfirmedSent:
 					m_LastSession->ProcessData (buf, len, senderEndpoint);
+					SSU2Checkpoint(10);
 				break;
 				case eSSU2SessionStateSessionCreatedSent:
 					if (!m_LastSession->ProcessSessionConfirmed (buf, len))
@@ -710,10 +718,12 @@ namespace transport
 						m_LastSession->Done ();
 						m_LastSession = nullptr;
 					}
+					SSU2Checkpoint(11);
 				break;
 				case eSSU2SessionStateIntroduced:
 					if (m_LastSession->GetRemoteEndpoint ().address ().is_unspecified ())
 						m_LastSession->SetRemoteEndpoint (senderEndpoint);
+					SSU2Checkpoint(12);
 					if (m_LastSession->GetRemoteEndpoint ().address () == senderEndpoint.address ()) // port might be different
 						m_LastSession->ProcessHolePunch (buf, len);
 					else
@@ -723,18 +733,23 @@ namespace transport
 						m_LastSession->Done ();
 						m_LastSession = nullptr;
 					}
+					SSU2Checkpoint(13);
 				break;
 				case eSSU2SessionStatePeerTest:
 					m_LastSession->SetRemoteEndpoint (senderEndpoint);
 					m_LastSession->ProcessPeerTest (buf, len);
+					SSU2Checkpoint(14);
 				break;
 				case eSSU2SessionStateHolePunch:
 					m_LastSession->ProcessFirstIncomingMessage (connID, buf, len); // SessionRequest
+					SSU2Checkpoint(15);
 				break;	
 				case eSSU2SessionStateClosing:
 					m_LastSession->ProcessData (buf, len, senderEndpoint); // we might receive termintaion block
+					SSU2Checkpoint(16);
 					if (m_LastSession && m_LastSession->GetState () == eSSU2SessionStateClosing)
 						m_LastSession->RequestTermination (eSSU2TerminationReasonIdleTimeout); // send termination again
+					SSU2Checkpoint(17);
 				break;
 				case eSSU2SessionStateClosingConfirmed:
 				case eSSU2SessionStateTerminated:
@@ -753,11 +768,17 @@ namespace transport
 				if (it1->second->GetState () == eSSU2SessionStateSessionRequestSent &&
 					it1->second->ProcessSessionCreated (buf, len))
 				{
+					SSU2Checkpoint(40);
 					std::lock_guard<std::mutex> l(m_PendingOutgoingSessionsMutex);
 					m_PendingOutgoingSessions.erase (it1); // we are done with that endpoint
+					SSU2Checkpoint(41);
 				}
 				else
-					it1->second->ProcessRetry (buf, len);
+				{
+					SSU2Checkpoint(42);
+					it1->second->ProcessRetry(buf, len);
+					SSU2Checkpoint(43);
+				}
 			}
 			else if (!i2p::transport::transports.IsInReservedRange(senderEndpoint.address ()) && senderEndpoint.port ())
 			{
@@ -765,6 +786,7 @@ namespace transport
 				auto session = std::make_shared<SSU2Session> (*this);
 				session->SetRemoteEndpoint (senderEndpoint);
 				session->ProcessFirstIncomingMessage (connID, buf, len);
+				SSU2Checkpoint(43);
 			}
 			else
 				LogPrint (eLogError, "SSU2: Incoming packet received from invalid endpoint ", senderEndpoint);

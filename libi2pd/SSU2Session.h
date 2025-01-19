@@ -309,7 +309,7 @@ namespace transport
 			void ScheduleConnectTimer ();
 			void HandleConnectTimer (const boost::system::error_code& ecode);
 			void PostI2NPMessages ();
-			bool SendQueue (); // returns true if ack block was sent
+			bool SendQueue (bool fromFlushData = false); // returns true if ack block was sent
 			bool SendFragmentedMessage (std::shared_ptr<I2NPMessage> msg);
 			void ResendHandshakePacket ();
 			void ConnectAfterIntroduction ();
